@@ -1,0 +1,149 @@
+// --- Graph Style Sheet: Low-Poly Procedural Worlds ---
+
+hud_title = {
+    top = 16,
+    left = 22,
+    font_size = 18.0,
+    color = "gold",
+}
+
+hud_stats = {
+    top = 40,
+    left = 22,
+    font_size = 14.0,
+    color = "white",
+}
+
+hud_biome = {
+    top = 64,
+    left = 22,
+    font_size = 14.0,
+    color = "lime",
+}
+
+hud_preset_info = {
+    top = 88,
+    left = 22,
+    font_size = 13.0,
+    color = "sky blue",
+}
+
+// Preset Quick Selection Buttons
+preset_button_row = {
+    top = 16,
+    right = 24,
+    direction = "horizontal",
+    gap = 10,
+}
+
+btn_preset_arch = {
+    width = 110,
+    height = 32,
+    bg = 0x2A5838FF,
+    hover_color = 0x3C7850FF,
+    active_color = 0x529E6CFF,
+    font_size = 13.0,
+    color = "white",
+}
+
+btn_preset_alpine = {
+    width = 110,
+    height = 32,
+    bg = 0x304868FF,
+    hover_color = 0x44648FFF,
+    active_color = 0x5E86BCFF,
+    font_size = 13.0,
+    color = "white",
+}
+
+btn_preset_canyon = {
+    width = 110,
+    height = 32,
+    bg = 0x6E3C25FF,
+    hover_color = 0x945233FF,
+    active_color = 0xB86640FF,
+    font_size = 13.0,
+    color = "white",
+}
+
+btn_preset_alien = {
+    width = 110,
+    height = 32,
+    bg = 0x482855FF,
+    hover_color = 0x663978FF,
+    active_color = 0x884CA1FF,
+    font_size = 13.0,
+    color = "white",
+}
+
+btn_random_seed = {
+    width = 110,
+    height = 32,
+    bg = 0x5A4822FF,
+    hover_color = 0x7E6430FF,
+    active_color = 0xA88640FF,
+    font_size = 13.0,
+    color = "gold",
+}
+
+// Bottom Controls Bar
+footer_bar = {
+    bottom = 0,
+    left = 0,
+    width = 100%,
+    height = 36,
+    color = 0x0A0E14D0,
+}
+
+footer_text = {
+    bottom = 10,
+    left = 50%,
+    align = "center",
+    font_size = 13.0,
+    color = "light gray",
+}
+
+// --- Pause Modal Overlay ---
+pause_title = {
+    top = 18%,
+    left = 50%,
+    align = "center",
+    font_size = 32.0,
+    color = "gold",
+}
+
+pause_subtitle = {
+    top = 25%,
+    left = 50%,
+    align = "center",
+    font_size = 16.0,
+    color = "light gray",
+}
+
+pause_btn_col = {
+    top = 36%,
+    left = 50%,
+    align = "center",
+    direction = "vertical",
+    gap = 14,
+}
+
+btn_resume = {
+    width = 240,
+    height = 44,
+    bg = 0x245A30FF,
+    hover_color = 0x337A42FF,
+    active_color = 0x449A56FF,
+    font_size = 17.0,
+    color = "white",
+}
+
+btn_randomize = {
+    width = 240,
+    height = 44,
+    bg = 0x554420FF,
+    hover_color = 0x775E2DFF,
+    active_color = 0x9E7D3CFF,
+    font_size = 17.0,
+    color = "gold",
+}

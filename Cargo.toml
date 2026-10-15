@@ -1,0 +1,7 @@
+[package]
+name = "lowpoly-procedural-worlds"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+muxapp = { git = "https://github.com/MarcosAndradeV/mux", version = "0.3.0" }
