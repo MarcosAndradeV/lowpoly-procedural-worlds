@@ -240,7 +240,7 @@ dependencies = [
 [[package]]
 name = "muxapp"
 version = "0.3.0"
-source = "git+https://github.com/MarcosAndradeV/mux#0483a12061c9b39350395be843c79c1338e372f1"
+source = "git+https://github.com/MarcosAndradeV/mux#e7a0f95f999f3d69bf929dad1d73189b133c5308"
 dependencies = [
  "muxui",
  "muxutils",
@@ -250,7 +250,7 @@ dependencies = [
 [[package]]
 name = "muxui"
 version = "0.3.0"
-source = "git+https://github.com/MarcosAndradeV/mux#0483a12061c9b39350395be843c79c1338e372f1"
+source = "git+https://github.com/MarcosAndradeV/mux#e7a0f95f999f3d69bf929dad1d73189b133c5308"
 dependencies = [
  "muxutils",
 ]
@@ -258,7 +258,7 @@ dependencies = [
 [[package]]
 name = "muxutils"
 version = "0.3.0"
-source = "git+https://github.com/MarcosAndradeV/mux#0483a12061c9b39350395be843c79c1338e372f1"
+source = "git+https://github.com/MarcosAndradeV/mux#e7a0f95f999f3d69bf929dad1d73189b133c5308"
 dependencies = [
  "gss",
  "raylib",

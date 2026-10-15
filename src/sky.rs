@@ -70,7 +70,7 @@ pub struct SkyDome {
 impl Default for SkyDome {
     fn default() -> Self {
         Self {
-            time_of_day: TimeOfDay::Noon,
+            time_of_day: TimeOfDay::Sunset,
             cloud_offset: 0.0,
         }
     }

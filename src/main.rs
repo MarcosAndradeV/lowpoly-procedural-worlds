@@ -163,7 +163,7 @@ impl Scene<AppState> for WorldScene {
         });
     }
 
-    fn draw_2d(&mut self, state: &AppState, style: &Style) {
+    fn draw_2d(&mut self, state: &mut AppState, style: &Style) {
         if !self.show_hud {
             return;
         }
@@ -217,35 +217,19 @@ impl Scene<AppState> for WorldScene {
         .place(style, "preset_button_row");
 
         if btn_arch.clicked() {
-            unsafe {
-                // Workaround to bypass immutable borrow of state in draw_2d
-                let st = state as *const AppState as *mut AppState;
-                (*st).config.set_preset(WorldPreset::Archipelago);
-            }
+            state.config.set_preset(WorldPreset::Archipelago);
         }
         if btn_alpine.clicked() {
-            unsafe {
-                let st = state as *const AppState as *mut AppState;
-                (*st).config.set_preset(WorldPreset::AlpineHighlands);
-            }
+            state.config.set_preset(WorldPreset::AlpineHighlands);
         }
         if btn_canyon.clicked() {
-            unsafe {
-                let st = state as *const AppState as *mut AppState;
-                (*st).config.set_preset(WorldPreset::Canyonlands);
-            }
+            state.config.set_preset(WorldPreset::Canyonlands);
         }
         if btn_alien.clicked() {
-            unsafe {
-                let st = state as *const AppState as *mut AppState;
-                (*st).config.set_preset(WorldPreset::AlienCrags);
-            }
+            state.config.set_preset(WorldPreset::AlienCrags);
         }
         if btn_rand.clicked() {
-            unsafe {
-                let st = state as *const AppState as *mut AppState;
-                (*st).config.randomize_seed();
-            }
+            state.config.randomize_seed();
         }
 
         // Bottom Controls Bar
@@ -257,8 +241,7 @@ impl Scene<AppState> for WorldScene {
 /// Modal overlay when simulation is paused.
 #[derive(Default)]
 pub struct PauseOverlayScene {
-    resume: bool,
-    randomize: bool,
+    pause_resume: bool,
 }
 
 impl Scene<AppState> for PauseOverlayScene {
@@ -267,26 +250,19 @@ impl Scene<AppState> for PauseOverlayScene {
     }
     fn update(
         &mut self,
-        state: &mut AppState,
+        _state: &mut AppState,
         input: &Input,
         _style: &Style,
         _dt: f32,
     ) -> SceneAction {
-        if self.randomize {
-            self.resume = false;
-            self.randomize = false;
-            state.config.randomize_seed();
-            return SceneAction::Pop;
-        }
-        if input.is_action_pressed("pause") || self.resume {
-            self.resume = false;
-            self.randomize = false;
+        if input.is_action_pressed("pause") || self.pause_resume {
+            self.pause_resume = false;
             return SceneAction::Pop;
         }
         SceneAction::None
     }
 
-    fn draw_2d(&mut self, _state: &AppState, style: &Style) {
+    fn draw_2d(&mut self, state: &mut AppState, style: &Style) {
         // Dark translucent backdrop
         draw_rectangle_rec(get_virtual_screen_rect(), get_color(0x0C121ACC));
 
@@ -300,11 +276,11 @@ impl Scene<AppState> for PauseOverlayScene {
             .place(style, "pause_btn_col");
 
         if resume_btn.clicked() {
-            self.resume = true;
+            self.pause_resume = true;
             return;
         }
         if rand_btn.clicked() {
-            self.randomize = true;
+            state.config.randomize_seed();
             return;
         }
     }
@@ -325,7 +301,7 @@ fn main() {
     })
     .set_virtual_resolution(1280, 720)
     .set_style_file("style.gss")
-    .set_fps(60)
+    .set_fps(30)
     // Semantic input actions
     .register_action("pause", [KEY_P, KEY_ESCAPE])
     .register_action("randomize_seed", [KEY_R])
