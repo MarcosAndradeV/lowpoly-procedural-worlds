@@ -90,9 +90,7 @@ pub fn classify_biome(
             return BiomeType::DeepOcean;
         } else if height < water_level {
             return BiomeType::Ocean;
-        } else if steepness < 0.6 {
-            return BiomeType::MountainRock;
-        } else if height > water_level + 75.0 {
+        } else if steepness < 0.6 || height > water_level + 75.0 {
             return BiomeType::MountainRock;
         } else {
             return BiomeType::VolcanicBasalt;

@@ -10,7 +10,7 @@ mod world;
 use camera::ExplorerCamera;
 use muxapp::muxui::d3::*;
 use muxapp::muxui::*;
-use muxapp::{App, Input, MouseAxis, Scene, SceneAction};
+use muxapp::{App, Input, MouseAxis, Scene, SceneAction, SceneLayerMode};
 use props::PropManager;
 use sky::SkyDome;
 use terrain::LowPolyTerrain;
@@ -22,6 +22,9 @@ pub struct AppState {
     pub config: WorldConfig,
     pub randomize_requested: bool,
     pub preset_request: Option<WorldPreset>,
+    pub camera_speed: f32,
+    pub props_enabled: bool,
+    pub water_animated: bool,
 }
 
 impl Default for AppState {
@@ -30,6 +33,9 @@ impl Default for AppState {
             config: WorldConfig::default(),
             randomize_requested: false,
             preset_request: None,
+            camera_speed: 40.0,
+            props_enabled: true,
+            water_animated: true,
         }
     }
 }
@@ -59,10 +65,10 @@ impl Default for WorldScene {
 
 impl Scene<AppState> for WorldScene {
     fn on_enter(&mut self, _ctx: &mut AppState, _style: &Style) {
-        disable_cursor();
+        set_cursor_mode(CursorMode::Captured);
     }
     fn on_exit(&mut self, _ctx: &mut AppState) {
-        enable_cursor();
+        set_cursor_mode(CursorMode::Normal);
     }
     fn update(
         &mut self,
@@ -103,10 +109,10 @@ impl Scene<AppState> for WorldScene {
             state.config.set_preset(WorldPreset::AlienCrags);
         }
         if input.is_action_pressed("toggle_props") {
-            self.props.enabled = !self.props.enabled;
+            state.props_enabled = !state.props_enabled;
         }
         if input.is_action_pressed("toggle_water") {
-            self.water.animated = !self.water.animated;
+            state.water_animated = !state.water_animated;
         }
         if input.is_action_pressed("cycle_time") {
             self.sky.cycle_time();
@@ -117,6 +123,11 @@ impl Scene<AppState> for WorldScene {
         if input.is_action_pressed("toggle_hud") {
             self.show_hud = !self.show_hud;
         }
+
+        // Synchronize state
+        self.props.enabled = state.props_enabled;
+        self.water.animated = state.water_animated;
+        self.camera.speed = state.camera_speed;
 
         // Update systems
         self.camera.update(input, &self.terrain, &state.config, dt);
@@ -163,9 +174,9 @@ impl Scene<AppState> for WorldScene {
         });
     }
 
-    fn draw_2d(&mut self, state: &mut AppState, style: &Style) {
+    fn draw_2d(&mut self, state: &mut AppState, style: &Style) -> SceneAction {
         if !self.show_hud {
-            return;
+            return SceneAction::None;
         }
 
         // Top HUD Header
@@ -200,12 +211,13 @@ impl Scene<AppState> for WorldScene {
         );
         TextElement::new(preset_text).place(style, "hud_preset_info");
 
-        // Top-Right Preset Buttons
+        // Top-Right Preset & Pause Buttons
         let btn_arch = Button::new("1: Archipelago");
         let btn_alpine = Button::new("2: Alpine");
         let btn_canyon = Button::new("3: Canyon");
         let btn_alien = Button::new("4: Alien");
         let btn_rand = Button::new("R: Random Seed");
+        let btn_pause = Button::new("Pause (P)");
 
         StackLayout::new(&[
             ("btn_preset_arch", &btn_arch),
@@ -213,6 +225,7 @@ impl Scene<AppState> for WorldScene {
             ("btn_preset_canyon", &btn_canyon),
             ("btn_preset_alien", &btn_alien),
             ("btn_random_seed", &btn_rand),
+            ("btn_hud_pause", &btn_pause),
         ])
         .place(style, "preset_button_row");
 
@@ -231,23 +244,35 @@ impl Scene<AppState> for WorldScene {
         if btn_rand.clicked() {
             state.config.randomize_seed();
         }
+        if btn_pause.clicked() {
+            return SceneAction::Push("pause".to_string());
+        }
 
         // Bottom Controls Bar
         RectangleElement.place(style, "footer_bar");
-        TextElement::new("WASD: Move | Mouse: Look | Shift: Boost | Ctrl/Space: Down/Up | F: Mode | R: Seed | 1-4: Presets | T: Trees | O: Waves | L: Sun | H: HUD | P: Pause").place(style, "footer_text");
+        TextElement::new("WASD: Move | Mouse: Look | Shift: Boost | Ctrl/Space: Down/Up | F: Mode | R: Seed | 1-4: Presets | T: Trees | O: Waves | L: Sun | H: HUD | P/Esc: Pause").place(style, "footer_text");
+
+        SceneAction::None
     }
 }
 
-/// Modal overlay when simulation is paused.
+/// Modal overlay rendered directly over the frozen 3D procedural world.
 #[derive(Default)]
-pub struct PauseOverlayScene {
-    pause_resume: bool,
-}
+pub struct PauseOverlayScene;
 
 impl Scene<AppState> for PauseOverlayScene {
-    fn on_enter(&mut self, _ctx: &mut AppState, _style: &Style) {
-        enable_cursor();
+    fn layer_mode(&self) -> SceneLayerMode {
+        SceneLayerMode::Overlay
     }
+
+    fn on_enter(&mut self, _ctx: &mut AppState, _style: &Style) {
+        set_cursor_mode(CursorMode::Normal);
+    }
+
+    fn on_exit(&mut self, _ctx: &mut AppState) {
+        set_cursor_mode(CursorMode::Captured);
+    }
+
     fn update(
         &mut self,
         _state: &mut AppState,
@@ -255,34 +280,59 @@ impl Scene<AppState> for PauseOverlayScene {
         _style: &Style,
         _dt: f32,
     ) -> SceneAction {
-        if input.is_action_pressed("pause") || self.pause_resume {
-            self.pause_resume = false;
+        if input.is_action_pressed("pause") {
             return SceneAction::Pop;
         }
         SceneAction::None
     }
 
-    fn draw_2d(&mut self, state: &mut AppState, style: &Style) {
-        // Dark translucent backdrop
-        draw_rectangle_rec(get_virtual_screen_rect(), get_color(0x0C121ACC));
+    fn draw_2d(&mut self, state: &mut AppState, style: &Style) -> SceneAction {
+        // Dark translucent backdrop over the underlying frozen 3D world
+        draw_rectangle_rec(get_virtual_screen_rect(), get_color(0x0C121AE6));
 
         TextElement::new("EXPLORATION PAUSED").place(style, "pause_title");
         TextElement::new("Press [P] or [Esc] to resume exploring").place(style, "pause_subtitle");
 
+        // Runtime tuning sliders
+        let water_slider = Slider::new(0.0, 40.0, state.config.water_level)
+            .with_step(0.5)
+            .with_label(format!("Water Level: {:.1}", state.config.water_level));
+        water_slider.place(style, "slider_water");
+        water_slider.apply(&mut state.config.water_level);
+
+        let speed_slider = Slider::new(10.0, 120.0, state.camera_speed)
+            .with_step(5.0)
+            .with_label(format!("Flight Speed: {:.0}", state.camera_speed));
+        speed_slider.place(style, "slider_speed");
+        speed_slider.apply(&mut state.camera_speed);
+
+        // Feature toggle checkboxes
+        Checkbox::bind("Vegetation & Rocks", &mut state.props_enabled, style, "chk_props");
+        Checkbox::bind("Animated Ocean Waves", &mut state.water_animated, style, "chk_waves");
+
+        // Modal action buttons
         let resume_btn = Button::new("Resume World");
         let rand_btn = Button::new("Randomize Seed");
+        let quit_btn = Button::new("Exit Application");
 
-        StackLayout::new(&[("btn_resume", &resume_btn), ("btn_randomize", &rand_btn)])
-            .place(style, "pause_btn_col");
+        StackLayout::new(&[
+            ("btn_resume", &resume_btn),
+            ("btn_randomize", &rand_btn),
+            ("btn_quit", &quit_btn),
+        ])
+        .place(style, "pause_btn_col");
 
         if resume_btn.clicked() {
-            self.pause_resume = true;
-            return;
+            return SceneAction::Pop;
         }
         if rand_btn.clicked() {
             state.config.randomize_seed();
-            return;
         }
+        if quit_btn.clicked() {
+            std::process::exit(0);
+        }
+
+        SceneAction::None
     }
 }
 
@@ -290,20 +340,19 @@ fn main() {
     App::init(
         1280,
         720,
-        "Low-Poly Procedural Worlds - MUX 0.3.0",
+        "Low-Poly Procedural Worlds - MUX 0.4.0",
         AppState::default,
     )
+    .disable_exit_key()
+    .set_cursor_mode(CursorMode::Captured)
     .on_load(|_, _| {
         maximize_window();
-        unsafe {
-            SetExitKey(0);
-        }
     })
     .set_virtual_resolution(1280, 720)
     .set_style_file("style.gss")
     .set_fps(60)
     // Semantic input actions
-    .register_action("pause", [KEY_P, KEY_ESCAPE])
+    .register_ui_action("pause", [KEY_P, KEY_ESCAPE])
     .register_action("randomize_seed", [KEY_R])
     .register_action("preset_1", [KEY_ONE])
     .register_action("preset_2", [KEY_TWO])
@@ -324,7 +373,7 @@ fn main() {
     .register_mouse_axis("pitch", MouseAxis::Y, -0.04)
     // Register scenes in MUX router
     .add_scene("world", WorldScene::default())
-    .add_scene("pause", PauseOverlayScene::default())
+    .add_scene("pause", PauseOverlayScene)
     .set_active_scene("world")
     .run();
 }

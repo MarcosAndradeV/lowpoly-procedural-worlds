@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-muxapp = { git = "https://github.com/MarcosAndradeV/mux", version = "0.3.0" }
+muxapp = { git = "https://github.com/MarcosAndradeV/mux", version = "0.4.0" }
 
 [profile.dev]
 opt-level = 1

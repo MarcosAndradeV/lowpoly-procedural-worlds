@@ -142,8 +142,7 @@ impl WorldConfig {
                 let raw_h = (warp * 0.6 + cellular * 0.4) * self.height_scale;
                 // Terracing effect
                 let step = 14.0;
-                let terraced = (raw_h / step).floor() * step + ((raw_h % step) / step).powf(3.0) * step;
-                terraced
+                (raw_h / step).floor() * step + ((raw_h % step) / step).powf(3.0) * step
             }
             WorldPreset::AlienCrags => {
                 // Jagged, chaotic volcanic spikes and craters
@@ -189,7 +188,7 @@ mod tests {
         for x in (0..20).map(|i| i as f32 * 50.0) {
             for z in (0..20).map(|i| i as f32 * 50.0) {
                 let m = cfg.get_moisture(x, z);
-                assert!(m >= 0.0 && m <= 1.0, "Moisture out of range: {}", m);
+                assert!((0.0..=1.0).contains(&m), "Moisture out of range: {}", m);
             }
         }
     }

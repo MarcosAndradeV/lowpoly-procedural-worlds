@@ -12,8 +12,8 @@ impl NoiseGenerator {
     /// Constructs a new `NoiseGenerator` initialized with a given 64-bit seed.
     pub fn new(seed: u64) -> Self {
         let mut p = [0u8; 256];
-        for i in 0..256 {
-            p[i] = i as u8;
+        for (i, val) in p.iter_mut().enumerate() {
+            *val = i as u8;
         }
 
         // Fisher-Yates shuffle with simple 64-bit LCG / XorShift RNG
@@ -222,7 +222,7 @@ mod tests {
         for x in (0..50).map(|i| i as f32 * 10.0) {
             for z in (0..50).map(|i| i as f32 * 10.0) {
                 let v = n.fbm2d(x, z, 5, 0.005, 2.0, 0.5);
-                assert!(v >= -1.5 && v <= 1.5, "fBm value out of expected range: {}", v);
+                assert!((-1.5..=1.5).contains(&v), "fBm value out of expected range: {}", v);
             }
         }
     }

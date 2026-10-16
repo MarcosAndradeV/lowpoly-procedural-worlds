@@ -86,6 +86,16 @@ btn_random_seed = {
     color = "gold",
 }
 
+btn_hud_pause = {
+    width = 90,
+    height = 32,
+    bg = 0x4A3828FF,
+    hover_color = 0x6E5238FF,
+    active_color = 0x946E4AFF,
+    font_size = 13.0,
+    color = "white",
+}
+
 // Bottom Controls Bar
 footer_bar = {
     bottom = 0,
@@ -105,45 +115,101 @@ footer_text = {
 
 // --- Pause Modal Overlay ---
 pause_title = {
-    top = 18%,
+    top = 60,
     left = 50%,
     align = "center",
-    font_size = 32.0,
+    font_size = 30.0,
     color = "gold",
 }
 
 pause_subtitle = {
-    top = 25%,
+    top = 100,
     left = 50%,
     align = "center",
-    font_size = 16.0,
+    font_size = 14.0,
     color = "light gray",
 }
 
+slider_water = {
+    top = 145,
+    left = 50%,
+    align = "center",
+    width = 340,
+    height = 34,
+    bg = 0x1A283CFF,
+    fill_color = 0x2A70B8FF,
+    color = "white",
+    font_size = 14.0,
+}
+
+slider_speed = {
+    top = 195,
+    left = 50%,
+    align = "center",
+    width = 340,
+    height = 34,
+    bg = 0x2C281EFF,
+    fill_color = 0xB88A2AFF,
+    color = "white",
+    font_size = 14.0,
+}
+
+chk_props = {
+    top = 250,
+    left = 470,
+    width = 240,
+    height = 26,
+    font_size = 15.0,
+    color = "white",
+    bg = 0x223328FF,
+    active_color = 0x44D068FF,
+}
+
+chk_waves = {
+    top = 285,
+    left = 470,
+    width = 240,
+    height = 26,
+    font_size = 15.0,
+    color = "white",
+    bg = 0x182838FF,
+    active_color = 0x3898E0FF,
+}
+
 pause_btn_col = {
-    top = 36%,
+    top = 335,
     left = 50%,
     align = "center",
     direction = "vertical",
-    gap = 14,
+    gap = 12,
 }
 
 btn_resume = {
-    width = 240,
-    height = 44,
+    width = 260,
+    height = 40,
     bg = 0x245A30FF,
     hover_color = 0x337A42FF,
     active_color = 0x449A56FF,
-    font_size = 17.0,
+    font_size = 15.0,
     color = "white",
 }
 
 btn_randomize = {
-    width = 240,
-    height = 44,
+    width = 260,
+    height = 40,
     bg = 0x554420FF,
     hover_color = 0x775E2DFF,
     active_color = 0x9E7D3CFF,
-    font_size = 17.0,
+    font_size = 15.0,
     color = "gold",
+}
+
+btn_quit = {
+    width = 260,
+    height = 40,
+    bg = 0x552222FF,
+    hover_color = 0x7A2E2EFF,
+    active_color = 0x9E3C3CFF,
+    font_size = 15.0,
+    color = "white",
 }

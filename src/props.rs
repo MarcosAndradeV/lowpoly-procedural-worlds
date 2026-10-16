@@ -179,6 +179,7 @@ impl PropGenerator {
         );
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn append_cylinder(
         base: Vector3,
         r_bottom: f32,
@@ -222,6 +223,7 @@ impl PropGenerator {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn append_cone(
         base: Vector3,
         radius: f32,
@@ -281,6 +283,7 @@ impl Default for PropManager {
 
 impl PropManager {
     /// Renders all procedural props in view around `(center_x, center_z)`.
+    #[allow(clippy::too_many_arguments)]
     pub fn draw(
         &self,
         d3: &Render3DContext,
