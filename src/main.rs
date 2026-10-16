@@ -301,7 +301,7 @@ fn main() {
     })
     .set_virtual_resolution(1280, 720)
     .set_style_file("style.gss")
-    .set_fps(30)
+    .set_fps(60)
     // Semantic input actions
     .register_action("pause", [KEY_P, KEY_ESCAPE])
     .register_action("randomize_seed", [KEY_R])

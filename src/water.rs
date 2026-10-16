@@ -1,4 +1,5 @@
 use muxapp::muxui::{d3::*, *};
+use std::cell::RefCell;
 
 /// Low-poly animated water surface with faceted waves and sun specular highlights.
 pub struct LowPolyWater {
@@ -6,15 +7,22 @@ pub struct LowPolyWater {
     pub cell_size: f32,
     pub animated: bool,
     pub time: f32,
+    vertex_buffer: RefCell<Vec<Vertex3D>>,
+    height_cache: RefCell<Vec<f32>>,
 }
 
 impl Default for LowPolyWater {
     fn default() -> Self {
+        let grid_size = 42;
+        let total_verts = (grid_size * grid_size * 6) as usize;
+        let total_points = ((grid_size + 1) * (grid_size + 1)) as usize;
         Self {
-            grid_size: 42,
+            grid_size,
             cell_size: 32.0,
             animated: true,
             time: 0.0,
+            vertex_buffer: RefCell::new(Vec::with_capacity(total_verts)),
+            height_cache: RefCell::new(vec![0.0; total_points]),
         }
     }
 }
@@ -40,6 +48,10 @@ impl LowPolyWater {
     }
 
     /// Draws the faceted water surface centered around the camera.
+    ///
+    /// Performance optimizations:
+    /// - Reuses persistent vertex buffer (0 heap allocations per frame).
+    /// - Samples wave height once per grid point, reducing trigonometric calls by ~74%.
     pub fn draw(
         &self,
         d3: &Render3DContext,
@@ -56,8 +68,26 @@ impl LowPolyWater {
         let start_x = snap_x - (half as f32) * self.cell_size;
         let start_z = snap_z - (half as f32) * self.cell_size;
 
-        let total_verts = (self.grid_size * self.grid_size * 6) as usize;
-        let mut water_vertices = Vec::with_capacity(total_verts);
+        let stride = (self.grid_size + 1) as usize;
+        let total_points = stride * stride;
+
+        let mut height_cache = self.height_cache.borrow_mut();
+        if height_cache.len() != total_points {
+            height_cache.resize(total_points, 0.0);
+        }
+
+        // Precompute wave height once per grid intersection
+        for i in 0..=self.grid_size {
+            let x = start_x + (i as f32) * self.cell_size;
+            let row_offset = (i as usize) * stride;
+            for j in 0..=self.grid_size {
+                let z = start_z + (j as f32) * self.cell_size;
+                height_cache[row_offset + (j as usize)] = self.wave_height(base_water_level, x, z);
+            }
+        }
+
+        let mut water_vertices = self.vertex_buffer.borrow_mut();
+        water_vertices.clear();
 
         let water_base_col = Color { r: 28, g: 110, b: 185, a: 220 };
         let specular_col = Color { r: 245, g: 250, b: 255, a: 240 };
@@ -65,15 +95,19 @@ impl LowPolyWater {
         for i in 0..self.grid_size {
             let x0 = start_x + (i as f32) * self.cell_size;
             let x1 = x0 + self.cell_size;
+            let row0 = (i as usize) * stride;
+            let row1 = ((i + 1) as usize) * stride;
 
             for j in 0..self.grid_size {
                 let z0 = start_z + (j as f32) * self.cell_size;
                 let z1 = z0 + self.cell_size;
+                let j0 = j as usize;
+                let j1 = (j + 1) as usize;
 
-                let y00 = self.wave_height(base_water_level, x0, z0);
-                let y10 = self.wave_height(base_water_level, x1, z0);
-                let y01 = self.wave_height(base_water_level, x0, z1);
-                let y11 = self.wave_height(base_water_level, x1, z1);
+                let y00 = height_cache[row0 + j0];
+                let y10 = height_cache[row1 + j0];
+                let y01 = height_cache[row0 + j1];
+                let y11 = height_cache[row1 + j1];
 
                 let p00 = Vector3::new(x0, y00, z0);
                 let p10 = Vector3::new(x1, y10, z0);
@@ -89,7 +123,6 @@ impl LowPolyWater {
                 }
 
                 let diff1 = ambient + (n1.dot(sun_dir)).max(0.0) * (1.0 - ambient);
-                // Low-poly faceted specular glint
                 let spec1 = (n1.dot(sun_dir)).max(0.0).powf(16.0) * 0.45;
 
                 let c1 = Color {

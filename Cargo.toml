@@ -5,3 +5,12 @@ edition = "2024"
 
 [dependencies]
 muxapp = { git = "https://github.com/MarcosAndradeV/mux", version = "0.3.0" }
+
+[profile.dev]
+opt-level = 1
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"

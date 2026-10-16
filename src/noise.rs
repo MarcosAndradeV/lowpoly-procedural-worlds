@@ -60,6 +60,7 @@ impl NoiseGenerator {
 
     /// Evaluates raw 2D Perlin gradient noise at `(x, z)`.
     /// Returns a value in approximately `[-1.0, 1.0]`.
+    #[inline]
     pub fn perlin2d(&self, x: f32, z: f32) -> f32 {
         let xi = x.floor() as i32 & 255;
         let zi = z.floor() as i32 & 255;
@@ -92,6 +93,7 @@ impl NoiseGenerator {
     /// - `freq`: base spatial frequency
     /// - `lacunarity`: frequency multiplier per octave (typically 2.0)
     /// - `persistence`: amplitude multiplier per octave (typically 0.5)
+    #[inline]
     pub fn fbm2d(&self, x: f32, z: f32, octaves: usize, freq: f32, lacunarity: f32, persistence: f32) -> f32 {
         let mut total = 0.0;
         let mut amplitude = 1.0;
@@ -114,6 +116,7 @@ impl NoiseGenerator {
 
     /// Ridged multifractal noise, creating sharp mountain ridges and crags.
     /// Inverts the absolute value of noise: `1.0 - abs(noise)`.
+    #[inline]
     pub fn ridged2d(&self, x: f32, z: f32, octaves: usize, freq: f32, lacunarity: f32, persistence: f32) -> f32 {
         let mut total = 0.0;
         let mut amplitude = 1.0;
@@ -143,6 +146,7 @@ impl NoiseGenerator {
 
     /// Domain warping: perturbs the evaluation coordinates with noise before sampling fBm.
     /// Produces organic, swirling mountain ranges, canyons, and river courses.
+    #[inline]
     pub fn domain_warp_fbm(&self, x: f32, z: f32, warp_strength: f32, octaves: usize, freq: f32) -> f32 {
         let qx = self.fbm2d(x, z, 3, freq * 1.5, 2.0, 0.5);
         let qz = self.fbm2d(x + 5.2, z + 1.3, 3, freq * 1.5, 2.0, 0.5);
@@ -156,6 +160,7 @@ impl NoiseGenerator {
     /// 2D Cellular / Worley distance noise.
     /// Computes distance to the nearest feature point in a randomized grid.
     /// Returns distance normalized roughly to `[0.0, 1.0]`.
+    #[inline]
     pub fn cellular2d(&self, x: f32, z: f32) -> f32 {
         let xi = x.floor() as i32;
         let zi = z.floor() as i32;

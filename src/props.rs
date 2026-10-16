@@ -258,11 +258,14 @@ impl PropGenerator {
     }
 }
 
+use std::cell::RefCell;
+
 /// Spatially manages and batches procedural props across the landscape.
 pub struct PropManager {
     pub enabled: bool,
     pub cell_size: f32,
     pub radius: i32,
+    vertex_buffer: RefCell<Vec<Vertex3D>>,
 }
 
 impl Default for PropManager {
@@ -271,6 +274,7 @@ impl Default for PropManager {
             enabled: true,
             cell_size: 28.0,
             radius: 12,
+            vertex_buffer: RefCell::new(Vec::with_capacity(8192)),
         }
     }
 }
@@ -294,7 +298,8 @@ impl PropManager {
         let snap_x = (center_x / self.cell_size).floor() as i32;
         let snap_z = (center_z / self.cell_size).floor() as i32;
 
-        let mut prop_vertices = Vec::with_capacity(8192);
+        let mut prop_vertices = self.vertex_buffer.borrow_mut();
+        prop_vertices.clear();
 
         for dx in -self.radius..=self.radius {
             for dz in -self.radius..=self.radius {
@@ -309,8 +314,8 @@ impl PropManager {
                     continue;
                 }
 
-                let sub_x = ((h >> 8) & 0xFF) as f32 / 255.0;
-                let sub_z = ((h >> 16) & 0xFF) as f32 / 255.0;
+                let sub_x = ((h >> 8) & 0xFF) as f32 * 0.003921569;
+                let sub_z = ((h >> 16) & 0xFF) as f32 * 0.003921569;
 
                 let wx = (cell_x as f32 + sub_x) * self.cell_size;
                 let wz = (cell_z as f32 + sub_z) * self.cell_size;
@@ -328,8 +333,15 @@ impl PropManager {
                     continue;
                 }
 
-                let biome = terrain.get_biome_at(config, wx, wz);
-                let scale = 0.85 + (((h >> 24) & 0x7F) as f32 / 128.0) * 0.5;
+                let moisture = config.get_moisture(wx, wz);
+                let biome = crate::biomes::classify_biome(
+                    wy,
+                    config.water_level,
+                    moisture,
+                    normal.y,
+                    config.is_volcanic(),
+                );
+                let scale = 0.85 + (((h >> 24) & 0x7F) as f32 * 0.0078125) * 0.5;
                 let pos = Vector3::new(wx, wy, wz);
 
                 match biome {

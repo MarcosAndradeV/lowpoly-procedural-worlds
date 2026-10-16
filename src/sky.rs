@@ -61,10 +61,13 @@ impl TimeOfDay {
     }
 }
 
+use std::cell::RefCell;
+
 /// Atmospheric haze dome and stylized floating low-poly clouds.
 pub struct SkyDome {
     pub time_of_day: TimeOfDay,
     cloud_offset: f32,
+    vertex_buffer: RefCell<Vec<Vertex3D>>,
 }
 
 impl Default for SkyDome {
@@ -72,6 +75,7 @@ impl Default for SkyDome {
         Self {
             time_of_day: TimeOfDay::Sunset,
             cloud_offset: 0.0,
+            vertex_buffer: RefCell::new(Vec::with_capacity(36 * 6)),
         }
     }
 }
@@ -92,7 +96,8 @@ impl SkyDome {
         let height = 400.0;
 
         let (ground_color, sky_color) = self.time_of_day.sky_colors();
-        let mut dome_vertices = Vec::with_capacity(segments * 6);
+        let mut dome_vertices = self.vertex_buffer.borrow_mut();
+        dome_vertices.clear();
 
         for i in 0..segments {
             let a0 = (i as f32 / segments as f32) * 2.0 * PI;
