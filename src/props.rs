@@ -8,7 +8,7 @@ use std::f32::consts::PI;
 pub struct PropGenerator;
 
 impl PropGenerator {
-    /// Generates a low-poly conifer / pine tree mesh.
+    /// Generates a low-poly conifer / pine tree mesh with 3 shaded tiers.
     pub fn build_pine_tree(
         pos: Vector3,
         scale: f32,
@@ -17,17 +17,21 @@ impl PropGenerator {
         verts: &mut Vec<Vertex3D>,
     ) {
         let trunk_col = Color { r: 88, g: 54, b: 34, a: 255 };
-        let needle_col = Color { r: 34, g: 92, b: 46, a: 255 };
+        let tier_colors = [
+            Color { r: 28, g: 82, b: 40, a: 255 },
+            Color { r: 36, g: 100, b: 48, a: 255 },
+            Color { r: 46, g: 118, b: 56, a: 255 },
+        ];
 
         let trunk_radius = 0.45 * scale;
-        let trunk_height = 2.5 * scale;
+        let trunk_height = 2.6 * scale;
         let sides = 5;
 
         // Trunk (5-sided cylinder)
         Self::append_cylinder(
             pos,
             trunk_radius,
-            trunk_radius * 0.8,
+            trunk_radius * 0.75,
             trunk_height,
             sides,
             trunk_col,
@@ -36,12 +40,12 @@ impl PropGenerator {
             verts,
         );
 
-        // Tiered Conical Foliage (3 stacked faceted cones)
-        let tiers = 3;
-        for t in 0..tiers {
-            let base_y = pos.y + (1.8 + t as f32 * 1.6) * scale;
-            let cone_h = (3.2 - t as f32 * 0.4) * scale;
-            let radius = (2.4 - t as f32 * 0.55) * scale;
+        // Tiered Conical Foliage (3 overlapping faceted cones with solid undersides)
+        for (t, &needle_col) in tier_colors.iter().enumerate() {
+            let tf = t as f32;
+            let base_y = pos.y + (1.8 + tf * 1.45) * scale;
+            let cone_h = (3.0 - tf * 0.32) * scale;
+            let radius = (2.45 - tf * 0.48) * scale;
 
             Self::append_cone(
                 Vector3::new(pos.x, base_y, pos.z),
@@ -56,7 +60,7 @@ impl PropGenerator {
         }
     }
 
-    /// Generates a low-poly deciduous / oak tree mesh.
+    /// Generates a low-poly deciduous / broadleaf tree mesh with a water-tight faceted canopy.
     pub fn build_deciduous_tree(
         pos: Vector3,
         scale: f32,
@@ -65,42 +69,75 @@ impl PropGenerator {
         verts: &mut Vec<Vertex3D>,
     ) {
         let trunk_col = Color { r: 96, g: 62, b: 40, a: 255 };
-        let leaf_col = Color { r: 52, g: 138, b: 54, a: 255 };
+        let lower_leaf_col = Color { r: 44, g: 122, b: 48, a: 255 };
+        let mid_leaf_col = Color { r: 58, g: 146, b: 56, a: 255 };
+        let top_leaf_col = Color { r: 74, g: 164, b: 64, a: 255 };
 
-        let trunk_radius = 0.5 * scale;
-        let trunk_height = 3.0 * scale;
-        let sides = 5;
+        let trunk_radius = 0.48 * scale;
+        let trunk_height = 2.8 * scale;
+        let sides = 6;
 
         Self::append_cylinder(
             pos,
             trunk_radius,
-            trunk_radius * 0.7,
+            trunk_radius * 0.68,
             trunk_height,
-            sides,
+            5,
             trunk_col,
             light_dir,
             ambient,
             verts,
         );
 
-        // Foliage: faceted dual-cone canopy
-        let canopy_y = pos.y + trunk_height * 0.8;
-        let radius = 2.8 * scale;
-        let canopy_h = 3.5 * scale;
+        // 1. Lower outward-flaring foliage frustum
+        let y0 = pos.y + trunk_height * 0.72;
+        let h0 = 1.35 * scale;
+        let r0_bot = 1.25 * scale;
+        let r0_top = 2.65 * scale;
+        Self::append_cylinder(
+            Vector3::new(pos.x, y0, pos.z),
+            r0_bot,
+            r0_top,
+            h0,
+            sides,
+            lower_leaf_col,
+            light_dir,
+            ambient,
+            verts,
+        );
 
+        // 2. Middle tapering crown frustum (seamlessly joined at y0 + h0 with radius r0_top)
+        let y1 = y0 + h0;
+        let h1 = 1.45 * scale;
+        let r1_top = 1.95 * scale;
+        Self::append_cylinder(
+            Vector3::new(pos.x, y1, pos.z),
+            r0_top,
+            r1_top,
+            h1,
+            sides,
+            mid_leaf_col,
+            light_dir,
+            ambient,
+            verts,
+        );
+
+        // 3. Upper crown peak cone (seamlessly joined at y1 + h1 with radius r1_top)
+        let y2 = y1 + h1;
+        let h2 = 1.65 * scale;
         Self::append_cone(
-            Vector3::new(pos.x, canopy_y, pos.z),
-            radius,
-            canopy_h,
-            sides + 1,
-            leaf_col,
+            Vector3::new(pos.x, y2, pos.z),
+            r1_top,
+            h2,
+            sides,
+            top_leaf_col,
             light_dir,
             ambient,
             verts,
         );
     }
 
-    /// Generates a coastal palm tree mesh.
+    /// Generates a coastal palm tree mesh with a leaning segmented trunk and 7 arching 3D fronds.
     pub fn build_palm_tree(
         pos: Vector3,
         scale: f32,
@@ -108,49 +145,63 @@ impl PropGenerator {
         ambient: f32,
         verts: &mut Vec<Vertex3D>,
     ) {
-        let trunk_col = Color { r: 115, g: 82, b: 50, a: 255 };
-        let frond_col = Color { r: 48, g: 142, b: 42, a: 255 };
+        let trunk_col = Color { r: 122, g: 86, b: 52, a: 255 };
+        let frond_upper = Color { r: 58, g: 156, b: 48, a: 255 };
+        let frond_outer = Color { r: 46, g: 134, b: 40, a: 255 };
 
-        let trunk_h = 4.5 * scale;
-        let sides = 4;
+        let sides = 5;
+        let seg_h = 1.55 * scale;
 
-        // Slanted trunk
-        Self::append_cylinder(
-            pos,
-            0.4 * scale,
-            0.25 * scale,
-            trunk_h,
-            sides,
-            trunk_col,
-            light_dir,
-            ambient,
-            verts,
-        );
+        // 3-stage segmented trunk
+        for s in 0..3 {
+            let sf = s as f32;
+            let r_bot = (0.42 - sf * 0.08) * scale;
+            let r_top = (0.34 - sf * 0.07) * scale;
+            let base = Vector3::new(pos.x, pos.y + sf * seg_h, pos.z);
+            Self::append_cylinder(
+                base,
+                r_bot,
+                r_top,
+                seg_h,
+                sides,
+                trunk_col,
+                light_dir,
+                ambient,
+                verts,
+            );
+        }
 
-        // Palm fronds arching outward
-        let top = Vector3::new(pos.x, pos.y + trunk_h, pos.z);
-        let num_fronds = 6;
+        // Crown of 7 arching 3D double-sided palm fronds
+        let top = Vector3::new(pos.x, pos.y + 3.0 * seg_h, pos.z);
+        let num_fronds = 7;
         for i in 0..num_fronds {
-            let angle = (i as f32 / num_fronds as f32) * 2.0 * PI;
-            let dir_x = angle.cos();
-            let dir_z = angle.sin();
+            let angle = (i as f32 / num_fronds as f32) * 2.0 * PI + 0.25;
+            let dir = Vector3::new(angle.cos(), 0.0, angle.sin());
+            let side = Vector3::new(-angle.sin(), 0.0, angle.cos()) * (0.62 * scale);
 
-            let p0 = top;
-            let p1 = top + Vector3::new(dir_x * 2.2 * scale, -0.6 * scale, dir_z * 2.2 * scale);
-            let p2 = top + Vector3::new(dir_x * 3.4 * scale, -1.8 * scale, dir_z * 3.4 * scale);
+            let p_root = top + Vector3::new(0.0, 0.15 * scale, 0.0);
+            let p_mid_l = top + dir * (1.85 * scale) + Vector3::new(0.0, 0.55 * scale, 0.0) + side;
+            let p_mid_r = top + dir * (1.85 * scale) + Vector3::new(0.0, 0.55 * scale, 0.0) - side;
+            let p_tip = top + dir * (3.65 * scale) + Vector3::new(0.0, -1.05 * scale, 0.0);
 
-            let n = Vector3::new(0.0, 1.0, 0.0);
-            let lit = ambient + (n.dot(light_dir)).max(0.0) * (1.0 - ambient);
-            let c = Color {
-                r: (frond_col.r as f32 * lit) as u8,
-                g: (frond_col.g as f32 * lit) as u8,
-                b: (frond_col.b as f32 * lit) as u8,
-                a: 255,
-            };
-
-            verts.push(Vertex3D::new(p0, c).with_normal(n));
-            verts.push(Vertex3D::new(p1, c).with_normal(n));
-            verts.push(Vertex3D::new(p2, c).with_normal(n));
+            Self::append_double_sided_tri(
+                p_root,
+                p_mid_l,
+                p_mid_r,
+                frond_upper,
+                light_dir,
+                ambient,
+                verts,
+            );
+            Self::append_double_sided_tri(
+                p_mid_r,
+                p_mid_l,
+                p_tip,
+                frond_outer,
+                light_dir,
+                ambient,
+                verts,
+            );
         }
     }
 
@@ -162,10 +213,10 @@ impl PropGenerator {
         ambient: f32,
         verts: &mut Vec<Vertex3D>,
     ) {
-        let rock_col = Color { r: 110, g: 108, b: 112, a: 255 };
+        let rock_col = Color { r: 118, g: 116, b: 122, a: 255 };
         let sides = 6;
-        let radius = 1.6 * scale;
-        let height = 1.4 * scale;
+        let radius = 1.65 * scale;
+        let height = 1.45 * scale;
 
         Self::append_cone(
             pos,
@@ -177,6 +228,71 @@ impl PropGenerator {
             ambient,
             verts,
         );
+    }
+
+    /// Generates a jagged obsidian / volcanic spire for alien volcanic landscapes.
+    pub fn build_volcanic_spire(
+        pos: Vector3,
+        scale: f32,
+        light_dir: Vector3,
+        ambient: f32,
+        verts: &mut Vec<Vertex3D>,
+    ) {
+        let spire_col = Color { r: 95, g: 68, b: 92, a: 255 };
+        let sides = 5;
+        let radius = 1.35 * scale;
+        let height = 2.8 * scale;
+
+        Self::append_cone(
+            pos,
+            radius,
+            height,
+            sides,
+            spire_col,
+            light_dir,
+            ambient.max(0.35),
+            verts,
+        );
+    }
+
+    fn append_double_sided_tri(
+        p0: Vector3,
+        p1: Vector3,
+        p2: Vector3,
+        color: Color,
+        light_dir: Vector3,
+        ambient: f32,
+        verts: &mut Vec<Vertex3D>,
+    ) {
+        let e1 = p1 - p0;
+        let e2 = p2 - p0;
+        let mut n = e1.cross(e2).normalize();
+        if n.y < 0.0 {
+            n = -n;
+        }
+        let lit_top = ambient + (n.dot(light_dir)).max(0.0) * (1.0 - ambient);
+        let c_top = Color {
+            r: (color.r as f32 * lit_top) as u8,
+            g: (color.g as f32 * lit_top) as u8,
+            b: (color.b as f32 * lit_top) as u8,
+            a: 255,
+        };
+        let c_bot = Color {
+            r: (color.r as f32 * (lit_top * 0.78)) as u8,
+            g: (color.g as f32 * (lit_top * 0.78)) as u8,
+            b: (color.b as f32 * (lit_top * 0.78)) as u8,
+            a: 255,
+        };
+
+        // Front / top face
+        verts.push(Vertex3D::new(p0, c_top).with_normal(n));
+        verts.push(Vertex3D::new(p1, c_top).with_normal(n));
+        verts.push(Vertex3D::new(p2, c_top).with_normal(n));
+
+        // Back / bottom face (reversed winding so never culled from below)
+        verts.push(Vertex3D::new(p0, c_bot).with_normal(-n));
+        verts.push(Vertex3D::new(p2, c_bot).with_normal(-n));
+        verts.push(Vertex3D::new(p1, c_bot).with_normal(-n));
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -192,6 +308,14 @@ impl PropGenerator {
         verts: &mut Vec<Vertex3D>,
     ) {
         let top = base + Vector3::new(0.0, height, 0.0);
+        let cap_n = Vector3::new(0.0, -1.0, 0.0);
+        let cap_c = Color {
+            r: (color.r as f32 * ambient * 0.85) as u8,
+            g: (color.g as f32 * ambient * 0.85) as u8,
+            b: (color.b as f32 * ambient * 0.85) as u8,
+            a: 255,
+        };
+
         for i in 0..sides {
             let a0 = (i as f32 / sides as f32) * 2.0 * PI;
             let a1 = ((i + 1) as f32 / sides as f32) * 2.0 * PI;
@@ -201,7 +325,7 @@ impl PropGenerator {
             let t0 = top + Vector3::new(a0.cos() * r_top, 0.0, a0.sin() * r_top);
             let t1 = top + Vector3::new(a1.cos() * r_top, 0.0, a1.sin() * r_top);
 
-            // Quad split into 2 triangles
+            // Quad split into 2 Counter-Clockwise triangles
             let e1 = t0 - b0;
             let e2 = b1 - b0;
             let n = e1.cross(e2).normalize();
@@ -220,6 +344,13 @@ impl PropGenerator {
             verts.push(Vertex3D::new(b1, c).with_normal(n));
             verts.push(Vertex3D::new(t0, c).with_normal(n));
             verts.push(Vertex3D::new(t1, c).with_normal(n));
+
+            // Bottom cap so wide foliage skirts are solid when viewed from below
+            if r_bottom > 0.8 {
+                verts.push(Vertex3D::new(b0, cap_c).with_normal(cap_n));
+                verts.push(Vertex3D::new(b1, cap_c).with_normal(cap_n));
+                verts.push(Vertex3D::new(base, cap_c).with_normal(cap_n));
+            }
         }
     }
 
@@ -235,6 +366,14 @@ impl PropGenerator {
         verts: &mut Vec<Vertex3D>,
     ) {
         let apex = base + Vector3::new(0.0, height, 0.0);
+        let cap_n = Vector3::new(0.0, -1.0, 0.0);
+        let cap_c = Color {
+            r: (color.r as f32 * ambient * 0.82) as u8,
+            g: (color.g as f32 * ambient * 0.82) as u8,
+            b: (color.b as f32 * ambient * 0.82) as u8,
+            a: 255,
+        };
+
         for i in 0..sides {
             let a0 = (i as f32 / sides as f32) * 2.0 * PI;
             let a1 = ((i + 1) as f32 / sides as f32) * 2.0 * PI;
@@ -242,8 +381,9 @@ impl PropGenerator {
             let b0 = base + Vector3::new(a0.cos() * radius, 0.0, a0.sin() * radius);
             let b1 = base + Vector3::new(a1.cos() * radius, 0.0, a1.sin() * radius);
 
-            let e1 = b1 - b0;
-            let e2 = apex - b0;
+            // Counter-Clockwise winding from outside: b0 -> apex -> b1
+            let e1 = apex - b0;
+            let e2 = b1 - b0;
             let n = e1.cross(e2).normalize();
             let lit = ambient + (n.dot(light_dir)).max(0.0) * (1.0 - ambient);
             let c = Color {
@@ -254,8 +394,13 @@ impl PropGenerator {
             };
 
             verts.push(Vertex3D::new(b0, c).with_normal(n));
-            verts.push(Vertex3D::new(b1, c).with_normal(n));
             verts.push(Vertex3D::new(apex, c).with_normal(n));
+            verts.push(Vertex3D::new(b1, c).with_normal(n));
+
+            // Bottom cap (CCW from below: b0 -> b1 -> base) so cones are solid from underneath
+            verts.push(Vertex3D::new(b0, cap_c).with_normal(cap_n));
+            verts.push(Vertex3D::new(b1, cap_c).with_normal(cap_n));
+            verts.push(Vertex3D::new(base, cap_c).with_normal(cap_n));
         }
     }
 }
@@ -274,9 +419,9 @@ impl Default for PropManager {
     fn default() -> Self {
         Self {
             enabled: true,
-            cell_size: 28.0,
-            radius: 12,
-            vertex_buffer: RefCell::new(Vec::with_capacity(8192)),
+            cell_size: 32.0,
+            radius: 16,
+            vertex_buffer: RefCell::new(Vec::with_capacity(16384)),
         }
     }
 }
@@ -323,16 +468,16 @@ impl PropManager {
                 let wx = (cell_x as f32 + sub_x) * self.cell_size;
                 let wz = (cell_z as f32 + sub_z) * self.cell_size;
 
-                let wy = terrain.get_height(config, wx, wz);
+                // Evaluate exact height and normal on the rendered low-poly triangle facet
+                let (wy, normal) = terrain.get_mesh_height(config, wx, wz);
 
-                // Do not spawn underwater or in deep ice peaks
-                if wy < config.water_level + 0.8 || wy > config.water_level + 85.0 {
+                // Keep props well clear of water waves and shoreline facets
+                if wy < config.water_level + 3.8 || wy > config.water_level + 82.0 {
                     continue;
                 }
 
-                let normal = terrain.get_normal(config, wx, wz);
                 // Props don't grow on steep cliffs
-                if normal.y < 0.72 {
+                if normal.y < 0.74 {
                     continue;
                 }
 
@@ -344,22 +489,27 @@ impl PropManager {
                     normal.y,
                     config.is_volcanic(),
                 );
-                let scale = 0.85 + (((h >> 24) & 0x7F) as f32 * 0.0078125) * 0.5;
+                // Scale matched to 18.0 terrain cell size
+                let scale = 1.35 + (((h >> 24) & 0x7F) as f32 * 0.0078125) * 0.75;
                 let pos = Vector3::new(wx, wy, wz);
 
                 match biome {
                     BiomeType::Beach => {
                         if (h & 3) == 0 {
-                            PropGenerator::build_palm_tree(pos, scale * 1.1, sun_dir, ambient, &mut prop_vertices);
+                            PropGenerator::build_palm_tree(pos, scale * 1.05, sun_dir, ambient, &mut prop_vertices);
                         } else {
-                            PropGenerator::build_rock(pos, scale * 0.8, sun_dir, ambient, &mut prop_vertices);
+                            PropGenerator::build_rock(pos, scale * 0.75, sun_dir, ambient, &mut prop_vertices);
                         }
                     }
                     BiomeType::Plains => {
-                        if (h & 1) == 0 {
+                        if (h & 3) == 0 && wy < config.water_level + 8.5 {
+                            PropGenerator::build_palm_tree(pos, scale * 1.05, sun_dir, ambient, &mut prop_vertices);
+                        } else if (h & 3) < 2 {
                             PropGenerator::build_deciduous_tree(pos, scale, sun_dir, ambient, &mut prop_vertices);
+                        } else if (h & 3) == 2 {
+                            PropGenerator::build_pine_tree(pos, scale * 0.95, sun_dir, ambient, &mut prop_vertices);
                         } else {
-                            PropGenerator::build_rock(pos, scale * 0.7, sun_dir, ambient, &mut prop_vertices);
+                            PropGenerator::build_rock(pos, scale * 0.65, sun_dir, ambient, &mut prop_vertices);
                         }
                     }
                     BiomeType::Forest => {
@@ -370,14 +520,17 @@ impl PropManager {
                         }
                     }
                     BiomeType::Highland => {
-                        if (h & 3) == 0 {
-                            PropGenerator::build_pine_tree(pos, scale * 0.85, sun_dir, ambient, &mut prop_vertices);
+                        if (h & 3) < 2 {
+                            PropGenerator::build_pine_tree(pos, scale * 0.9, sun_dir, ambient, &mut prop_vertices);
                         } else {
-                            PropGenerator::build_rock(pos, scale * 1.1, sun_dir, ambient, &mut prop_vertices);
+                            PropGenerator::build_rock(pos, scale * 1.0, sun_dir, ambient, &mut prop_vertices);
                         }
                     }
-                    BiomeType::Desert | BiomeType::Canyon | BiomeType::MountainRock | BiomeType::VolcanicBasalt => {
-                        PropGenerator::build_rock(pos, scale * 1.25, sun_dir, ambient, &mut prop_vertices);
+                    BiomeType::VolcanicBasalt if (h & 3) == 0 => {
+                        PropGenerator::build_volcanic_spire(pos, scale * 1.15, sun_dir, ambient, &mut prop_vertices);
+                    }
+                    BiomeType::Desert | BiomeType::Canyon | BiomeType::MountainRock if (h & 1) == 0 => {
+                        PropGenerator::build_rock(pos, scale * 1.1, sun_dir, ambient, &mut prop_vertices);
                     }
                     _ => {}
                 }

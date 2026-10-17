@@ -42,7 +42,65 @@ impl LowPolyTerrain {
     /// Evaluates surface elevation (clamped to water level).
     #[inline]
     pub fn get_surface_height(&self, config: &WorldConfig, x: f32, z: f32) -> f32 {
-        self.get_height(config, x, z).max(config.water_level)
+        self.get_mesh_height(config, x, z).0.max(config.water_level)
+    }
+
+    /// Evaluates the exact interpolated elevation and face normal on the rendered low-poly
+    /// triangle mesh at world coordinates `(x, z)`. Ensures props and the ground-walk camera
+    /// sit 100% flush on the rendered triangle facets without clipping or floating.
+    pub fn get_mesh_height(&self, config: &WorldConfig, x: f32, z: f32) -> (f32, Vector3) {
+        let x0 = (x / self.cell_size).floor() * self.cell_size;
+        let z0 = (z / self.cell_size).floor() * self.cell_size;
+        let x1 = x0 + self.cell_size;
+        let z1 = z0 + self.cell_size;
+
+        let u = ((x - x0) / self.cell_size).clamp(0.0, 1.0);
+        let v = ((z - z0) / self.cell_size).clamp(0.0, 1.0);
+
+        let y00 = config.get_height(x0, z0);
+        let y10 = config.get_height(x1, z0);
+        let y01 = config.get_height(x0, z1);
+        let y11 = config.get_height(x1, z1);
+
+        let p00 = Vector3::new(x0, y00, z0);
+        let p10 = Vector3::new(x1, y10, z0);
+        let p01 = Vector3::new(x0, y01, z1);
+        let p11 = Vector3::new(x1, y11, z1);
+
+        if (y00 - y11).abs() < (y10 - y01).abs() {
+            // Split along p00 -> p11
+            if u <= v {
+                let h = y00 + v * (y01 - y00) + u * (y11 - y01);
+                let mut n = (p01 - p00).cross(p11 - p00).normalize();
+                if n.y < 0.0 {
+                    n = -n;
+                }
+                (h, n)
+            } else {
+                let h = y00 + u * (y10 - y00) + v * (y11 - y10);
+                let mut n = (p11 - p00).cross(p10 - p00).normalize();
+                if n.y < 0.0 {
+                    n = -n;
+                }
+                (h, n)
+            }
+        } else if u + v <= 1.0 {
+            // Split along p10 -> p01 (lower-left triangle)
+            let h = y00 + u * (y10 - y00) + v * (y01 - y00);
+            let mut n = (p01 - p00).cross(p10 - p00).normalize();
+            if n.y < 0.0 {
+                n = -n;
+            }
+            (h, n)
+        } else {
+            // Split along p10 -> p01 (upper-right triangle)
+            let h = y11 + (1.0 - u) * (y01 - y11) + (1.0 - v) * (y10 - y11);
+            let mut n = (p01 - p10).cross(p11 - p10).normalize();
+            if n.y < 0.0 {
+                n = -n;
+            }
+            (h, n)
+        }
     }
 
     /// Estimates ground surface normal at `(x, z)` using finite differences.
@@ -56,12 +114,54 @@ impl LowPolyTerrain {
         Vector3::new(h_l - h_r, 2.0 * delta, h_d - h_u).normalize()
     }
 
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    fn emit_facet(
+        pa: Vector3,
+        pb: Vector3,
+        pc: Vector3,
+        water_level: f32,
+        quad_moist: f32,
+        is_volcanic: bool,
+        sun_dir: Vector3,
+        ambient_light: f32,
+        out: &mut Vec<Vertex3D>,
+    ) {
+        let e1 = pb - pa;
+        let e2 = pc - pa;
+        let mut n = e1.cross(e2).normalize();
+        if n.y < 0.0 {
+            n = -n;
+        }
+
+        let min_y = pa.y.min(pb.y).min(pc.y);
+        let max_y = pa.y.max(pb.y).max(pc.y);
+        let avg_y = (pa.y + pb.y + pc.y) * 0.33333334;
+
+        // When a facet crosses water_level, classify by its above-water portion so dark underwater
+        // colors never protrude above the water surface.
+        let effective_y = if min_y < water_level && max_y >= water_level {
+            water_level + (max_y - water_level) * 0.55
+        } else {
+            avg_y
+        };
+
+        let rel_h = effective_y - water_level;
+        let light = ambient_light + (n.dot(sun_dir)).max(0.0) * (1.0 - ambient_light);
+        let biome = classify_biome(effective_y, water_level, quad_moist, n.y, is_volcanic);
+        let color = calculate_facet_color(biome, rel_h, n.y, light, is_volcanic);
+
+        out.push(Vertex3D::new(pa, color).with_normal(n));
+        out.push(Vertex3D::new(pb, color).with_normal(n));
+        out.push(Vertex3D::new(pc, color).with_normal(n));
+    }
+
     /// Builds and draws the low-poly terrain mesh centered around `(center_x, center_z)`.
     ///
     /// Performance optimizations:
     /// - Reuses persistent vertex buffer (0 heap allocations per frame).
     /// - Precomputes unique (grid_size + 1)^2 height samples once, reducing noise evaluations by ~74%.
-    /// - Shared moisture evaluation per quad.
+    /// - Adaptive diagonal quad splitting aligns facet edges with ridges, valleys, and coastlines.
     pub fn draw(
         &self,
         d3: &Render3DContext,
@@ -127,39 +227,54 @@ impl LowPolyTerrain {
                 // Quad moisture sampled once for both triangles
                 let quad_moist = config.get_moisture((x0 + x1) * 0.5, (z0 + z1) * 0.5);
 
-                // --- Triangle 1: p00 -> p01 -> p10 (Counter-Clockwise) ---
-                let e1 = p01 - p00;
-                let e2 = p10 - p00;
-                let mut n1 = e1.cross(e2).normalize();
-                if n1.y < 0.0 {
-                    n1 = -n1;
+                // Adaptive diagonal split: connect the pair of opposite vertices with smaller height diff
+                if (y00 - y11).abs() < (y10 - y01).abs() {
+                    Self::emit_facet(
+                        p00,
+                        p01,
+                        p11,
+                        config.water_level,
+                        quad_moist,
+                        is_volcanic,
+                        sun_dir,
+                        ambient_light,
+                        &mut terrain_vertices,
+                    );
+                    Self::emit_facet(
+                        p00,
+                        p11,
+                        p10,
+                        config.water_level,
+                        quad_moist,
+                        is_volcanic,
+                        sun_dir,
+                        ambient_light,
+                        &mut terrain_vertices,
+                    );
+                } else {
+                    Self::emit_facet(
+                        p00,
+                        p01,
+                        p10,
+                        config.water_level,
+                        quad_moist,
+                        is_volcanic,
+                        sun_dir,
+                        ambient_light,
+                        &mut terrain_vertices,
+                    );
+                    Self::emit_facet(
+                        p10,
+                        p01,
+                        p11,
+                        config.water_level,
+                        quad_moist,
+                        is_volcanic,
+                        sun_dir,
+                        ambient_light,
+                        &mut terrain_vertices,
+                    );
                 }
-
-                let light1 = ambient_light + (n1.dot(sun_dir)).max(0.0) * (1.0 - ambient_light);
-                let avg_y1 = (y00 + y01 + y10) * 0.33333334;
-                let biome1 = classify_biome(avg_y1, config.water_level, quad_moist, n1.y, is_volcanic);
-                let c1 = calculate_facet_color(biome1, n1.y, light1);
-
-                terrain_vertices.push(Vertex3D::new(p00, c1).with_normal(n1));
-                terrain_vertices.push(Vertex3D::new(p01, c1).with_normal(n1));
-                terrain_vertices.push(Vertex3D::new(p10, c1).with_normal(n1));
-
-                // --- Triangle 2: p10 -> p01 -> p11 (Counter-Clockwise) ---
-                let e3 = p01 - p10;
-                let e4 = p11 - p10;
-                let mut n2 = e3.cross(e4).normalize();
-                if n2.y < 0.0 {
-                    n2 = -n2;
-                }
-
-                let light2 = ambient_light + (n2.dot(sun_dir)).max(0.0) * (1.0 - ambient_light);
-                let avg_y2 = (y10 + y01 + y11) * 0.33333334;
-                let biome2 = classify_biome(avg_y2, config.water_level, quad_moist, n2.y, is_volcanic);
-                let c2 = calculate_facet_color(biome2, n2.y, light2);
-
-                terrain_vertices.push(Vertex3D::new(p10, c2).with_normal(n2));
-                terrain_vertices.push(Vertex3D::new(p01, c2).with_normal(n2));
-                terrain_vertices.push(Vertex3D::new(p11, c2).with_normal(n2));
             }
         }
 
@@ -169,9 +284,8 @@ impl LowPolyTerrain {
 
     /// Identifies the dominant biome at the given location for the HUD.
     pub fn get_biome_at(&self, config: &WorldConfig, x: f32, z: f32) -> BiomeType {
-        let h = self.get_height(config, x, z);
+        let (h, n) = self.get_mesh_height(config, x, z);
         let m = config.get_moisture(x, z);
-        let n = self.get_normal(config, x, z);
         classify_biome(h, config.water_level, m, n.y, config.is_volcanic())
     }
 }

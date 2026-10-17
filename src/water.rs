@@ -13,12 +13,12 @@ pub struct LowPolyWater {
 
 impl Default for LowPolyWater {
     fn default() -> Self {
-        let grid_size = 42;
+        let grid_size = 64;
         let total_verts = (grid_size * grid_size * 6) as usize;
         let total_points = ((grid_size + 1) * (grid_size + 1)) as usize;
         Self {
             grid_size,
-            cell_size: 32.0,
+            cell_size: 36.0,
             animated: true,
             time: 0.0,
             vertex_buffer: RefCell::new(Vec::with_capacity(total_verts)),
@@ -47,11 +47,12 @@ impl LowPolyWater {
         base_level + w1 + w2 + w3
     }
 
-    /// Draws the faceted water surface centered around the camera.
+    /// Draws the faceted water (or molten lava) surface centered around the camera.
     ///
     /// Performance optimizations:
     /// - Reuses persistent vertex buffer (0 heap allocations per frame).
     /// - Samples wave height once per grid point, reducing trigonometric calls by ~74%.
+    #[allow(clippy::too_many_arguments)]
     pub fn draw(
         &self,
         d3: &Render3DContext,
@@ -60,6 +61,7 @@ impl LowPolyWater {
         center_z: f32,
         sun_dir: Vector3,
         ambient: f32,
+        is_volcanic: bool,
     ) {
         let snap_x = (center_x / self.cell_size).floor() * self.cell_size;
         let snap_z = (center_z / self.cell_size).floor() * self.cell_size;
@@ -89,8 +91,19 @@ impl LowPolyWater {
         let mut water_vertices = self.vertex_buffer.borrow_mut();
         water_vertices.clear();
 
-        let water_base_col = Color { r: 28, g: 110, b: 185, a: 220 };
-        let specular_col = Color { r: 245, g: 250, b: 255, a: 240 };
+        let (water_base_col, specular_col, min_diff) = if is_volcanic {
+            (
+                Color { r: 228, g: 68, b: 18, a: 238 },
+                Color { r: 255, g: 220, b: 75, a: 250 },
+                0.78, // Emissive lava glow
+            )
+        } else {
+            (
+                Color { r: 28, g: 110, b: 185, a: 220 },
+                Color { r: 245, g: 250, b: 255, a: 240 },
+                0.0,
+            )
+        };
 
         for i in 0..self.grid_size {
             let x0 = start_x + (i as f32) * self.cell_size;
@@ -122,7 +135,7 @@ impl LowPolyWater {
                     n1 = -n1;
                 }
 
-                let diff1 = ambient + (n1.dot(sun_dir)).max(0.0) * (1.0 - ambient);
+                let diff1 = (ambient + (n1.dot(sun_dir)).max(0.0) * (1.0 - ambient)).max(min_diff);
                 let spec1 = (n1.dot(sun_dir)).max(0.0).powf(16.0) * 0.45;
 
                 let c1 = Color {
@@ -144,7 +157,7 @@ impl LowPolyWater {
                     n2 = -n2;
                 }
 
-                let diff2 = ambient + (n2.dot(sun_dir)).max(0.0) * (1.0 - ambient);
+                let diff2 = (ambient + (n2.dot(sun_dir)).max(0.0) * (1.0 - ambient)).max(min_diff);
                 let spec2 = (n2.dot(sun_dir)).max(0.0).powf(16.0) * 0.45;
 
                 let c2 = Color {

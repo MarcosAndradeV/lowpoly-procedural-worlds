@@ -20,7 +20,6 @@ use world::{WorldConfig, WorldPreset};
 /// Shared state across scenes in the MUX SceneRouter.
 pub struct AppState {
     pub config: WorldConfig,
-    pub randomize_requested: bool,
     pub preset_request: Option<WorldPreset>,
     pub camera_speed: f32,
     pub props_enabled: bool,
@@ -31,7 +30,6 @@ impl Default for AppState {
     fn default() -> Self {
         Self {
             config: WorldConfig::default(),
-            randomize_requested: false,
             preset_request: None,
             camera_speed: 40.0,
             props_enabled: true,
@@ -85,11 +83,6 @@ impl Scene<AppState> for WorldScene {
         // Handle external preset requests from UI or pause menu
         if let Some(preset) = state.preset_request.take() {
             state.config.set_preset(preset);
-        }
-
-        if state.randomize_requested {
-            state.randomize_requested = false;
-            state.config.randomize_seed();
         }
 
         // Semantic action hotkeys
@@ -162,7 +155,7 @@ impl Scene<AppState> for WorldScene {
                 ambient,
             );
 
-            // 4. Faceted animated ocean water
+            // 4. Faceted animated ocean water (or molten lava in volcanic worlds)
             self.water.draw(
                 d3,
                 state.config.water_level,
@@ -170,6 +163,7 @@ impl Scene<AppState> for WorldScene {
                 cam_pos.z,
                 sun_dir,
                 ambient,
+                state.config.is_volcanic(),
             );
         });
     }

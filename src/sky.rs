@@ -92,8 +92,9 @@ impl SkyDome {
     /// Renders the atmospheric horizon dome.
     pub fn draw(&self, d3: &Render3DContext, center_x: f32, center_z: f32) {
         let segments = 36;
-        let radius = 1100.0;
-        let height = 400.0;
+        let radius = 1550.0;
+        let base_y = -60.0;
+        let height = 650.0;
 
         let (ground_color, sky_color) = self.time_of_day.sky_colors();
         let mut dome_vertices = self.vertex_buffer.borrow_mut();
@@ -108,11 +109,11 @@ impl SkyDome {
             let x1 = center_x + a1.cos() * radius;
             let z1 = center_z + a1.sin() * radius;
 
-            dome_vertices.push(Vertex3D::new(Vector3::new(x0, -10.0, z0), ground_color));
-            dome_vertices.push(Vertex3D::new(Vector3::new(x1, -10.0, z1), ground_color));
+            dome_vertices.push(Vertex3D::new(Vector3::new(x0, base_y, z0), ground_color));
+            dome_vertices.push(Vertex3D::new(Vector3::new(x1, base_y, z1), ground_color));
             dome_vertices.push(Vertex3D::new(Vector3::new(x0, height, z0), sky_color));
 
-            dome_vertices.push(Vertex3D::new(Vector3::new(x1, -10.0, z1), ground_color));
+            dome_vertices.push(Vertex3D::new(Vector3::new(x1, base_y, z1), ground_color));
             dome_vertices.push(Vertex3D::new(Vector3::new(x1, height, z1), sky_color));
             dome_vertices.push(Vertex3D::new(Vector3::new(x0, height, z0), sky_color));
         }
@@ -124,14 +125,14 @@ impl SkyDome {
     }
 
     fn draw_clouds(&self, d3: &Render3DContext, center_x: f32, center_z: f32) {
-        let cloud_y = 135.0;
+        let cloud_y = 185.0;
         let cloud_color = match self.time_of_day {
             TimeOfDay::Noon => Color { r: 250, g: 252, b: 255, a: 220 },
             TimeOfDay::Sunset => Color { r: 245, g: 195, b: 180, a: 220 },
             TimeOfDay::Night => Color { r: 65, g: 75, b: 95, a: 160 },
         };
 
-        let cloud_spacing = 180.0;
+        let cloud_spacing = 220.0;
         let snap_x = (center_x / cloud_spacing).floor() as i32;
         let snap_z = (center_z / cloud_spacing).floor() as i32;
 
