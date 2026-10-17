@@ -176,8 +176,19 @@ chk_waves = {
     active_color = 0x3898E0FF,
 }
 
+chk_towns = {
+    top = 320,
+    left = 470,
+    width = 240,
+    height = 26,
+    font_size = 15.0,
+    color = "white",
+    bg = 0x38281AFF,
+    active_color = 0xE6A840FF,
+}
+
 pause_btn_col = {
-    top = 335,
+    top = 370,
     left = 50%,
     align = "center",
     direction = "vertical",

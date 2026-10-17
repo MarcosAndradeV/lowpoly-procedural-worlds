@@ -1,18 +1,32 @@
 use crate::biomes::{calculate_facet_color, classify_biome, BiomeType};
+use crate::towns::SettlementSurface;
 use crate::world::WorldConfig;
 use muxapp::muxui::{d3::*, *};
 use std::cell::RefCell;
 
 pub const DEFAULT_GRID_SIZE: i32 = 64 * 2;
-pub const DEFAULT_CELL_SIZE: f32 = 18.0 ;
+pub const DEFAULT_CELL_SIZE: f32 = 18.0;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TerrainCacheKey {
+    snap_x_bits: u32,
+    snap_z_bits: u32,
+    seed: u64,
+    preset_id: u8,
+    water_bits: u32,
+    towns_enabled: bool,
+    ambient_bits: u32,
+}
 
 /// Low-poly terrain mesh generator with flat-shaded facets, slope detection,
-/// grid caching, and camera-centered streaming.
+/// grid caching, retained GPU VBO rendering, and camera-centered streaming.
 pub struct LowPolyTerrain {
     pub grid_size: i32,
     pub cell_size: f32,
     vertex_buffer: RefCell<Vec<Vertex3D>>,
     height_cache: RefCell<Vec<f32>>,
+    cached_key: RefCell<Option<TerrainCacheKey>>,
+    gpu_mesh: RefCell<Option<GpuMesh>>,
 }
 
 impl Default for LowPolyTerrain {
@@ -30,6 +44,8 @@ impl LowPolyTerrain {
             cell_size,
             vertex_buffer: RefCell::new(Vec::with_capacity(total_verts)),
             height_cache: RefCell::new(vec![0.0; total_points]),
+            cached_key: RefCell::new(None),
+            gpu_mesh: RefCell::new(None),
         }
     }
 
@@ -122,6 +138,7 @@ impl LowPolyTerrain {
         pc: Vector3,
         water_level: f32,
         quad_moist: f32,
+        settlement: SettlementSurface,
         is_volcanic: bool,
         sun_dir: Vector3,
         ambient_light: f32,
@@ -148,7 +165,22 @@ impl LowPolyTerrain {
 
         let rel_h = effective_y - water_level;
         let light = ambient_light + (n.dot(sun_dir)).max(0.0) * (1.0 - ambient_light);
-        let biome = classify_biome(effective_y, water_level, quad_moist, n.y, is_volcanic);
+
+        let biome = if rel_h >= 0.8 {
+            match settlement {
+                SettlementSurface::TownPlaza | SettlementSurface::CobbleRoad => {
+                    BiomeType::TownPlaza
+                }
+                SettlementSurface::DirtRoad => BiomeType::Road,
+                SettlementSurface::TownGreen => BiomeType::Plains,
+                SettlementSurface::None => {
+                    classify_biome(effective_y, water_level, quad_moist, n.y, is_volcanic)
+                }
+            }
+        } else {
+            classify_biome(effective_y, water_level, quad_moist, n.y, is_volcanic)
+        };
+
         let color = calculate_facet_color(biome, rel_h, n.y, light, is_volcanic);
 
         out.push(Vertex3D::new(pa, color).with_normal(n));
@@ -159,6 +191,7 @@ impl LowPolyTerrain {
     /// Builds and draws the low-poly terrain mesh centered around `(center_x, center_z)`.
     ///
     /// Performance optimizations:
+    /// - Skips rebuilding vertex buffer when camera remains within the same 18x18 grid snap cell.
     /// - Reuses persistent vertex buffer (0 heap allocations per frame).
     /// - Precomputes unique (grid_size + 1)^2 height samples once, reducing noise evaluations by ~74%.
     /// - Adaptive diagonal quad splitting aligns facet edges with ridges, valleys, and coastlines.
@@ -175,116 +208,158 @@ impl LowPolyTerrain {
         let snap_x = (center_x / self.cell_size).floor() * self.cell_size;
         let snap_z = (center_z / self.cell_size).floor() * self.cell_size;
 
-        let half_grid = self.grid_size / 2;
-        let start_x = snap_x - (half_grid as f32) * self.cell_size;
-        let start_z = snap_z - (half_grid as f32) * self.cell_size;
+        let current_key = TerrainCacheKey {
+            snap_x_bits: snap_x.to_bits(),
+            snap_z_bits: snap_z.to_bits(),
+            seed: config.seed,
+            preset_id: config.preset as u8,
+            water_bits: config.water_level.to_bits(),
+            towns_enabled: config.towns_enabled,
+            ambient_bits: ambient_light.to_bits(),
+        };
 
-        let stride = (self.grid_size + 1) as usize;
-        let total_points = stride * stride;
+        if *self.cached_key.borrow() != Some(current_key) {
+            let half_grid = self.grid_size / 2;
+            let start_x = snap_x - (half_grid as f32) * self.cell_size;
+            let start_z = snap_z - (half_grid as f32) * self.cell_size;
 
-        let mut height_cache = self.height_cache.borrow_mut();
-        if height_cache.len() != total_points {
-            height_cache.resize(total_points, 0.0);
-        }
+            let stride = (self.grid_size + 1) as usize;
+            let total_points = stride * stride;
 
-        // Fast batch height sampling across unique grid vertices
-        for i in 0..=self.grid_size {
-            let x = start_x + (i as f32) * self.cell_size;
-            let row_offset = (i as usize) * stride;
-            for j in 0..=self.grid_size {
-                let z = start_z + (j as f32) * self.cell_size;
-                height_cache[row_offset + (j as usize)] = config.get_height(x, z);
+            let mut height_cache = self.height_cache.borrow_mut();
+            if height_cache.len() != total_points {
+                height_cache.resize(total_points, 0.0);
             }
-        }
 
-        let mut terrain_vertices = self.vertex_buffer.borrow_mut();
-        terrain_vertices.clear();
-
-        let is_volcanic = config.is_volcanic();
-
-        for i in 0..self.grid_size {
-            let x0 = start_x + (i as f32) * self.cell_size;
-            let x1 = x0 + self.cell_size;
-            let row0 = (i as usize) * stride;
-            let row1 = ((i + 1) as usize) * stride;
-
-            for j in 0..self.grid_size {
-                let z0 = start_z + (j as f32) * self.cell_size;
-                let z1 = z0 + self.cell_size;
-                let j0 = j as usize;
-                let j1 = (j + 1) as usize;
-
-                let y00 = height_cache[row0 + j0];
-                let y10 = height_cache[row1 + j0];
-                let y01 = height_cache[row0 + j1];
-                let y11 = height_cache[row1 + j1];
-
-                let p00 = Vector3::new(x0, y00, z0);
-                let p10 = Vector3::new(x1, y10, z0);
-                let p01 = Vector3::new(x0, y01, z1);
-                let p11 = Vector3::new(x1, y11, z1);
-
-                // Quad moisture sampled once for both triangles
-                let quad_moist = config.get_moisture((x0 + x1) * 0.5, (z0 + z1) * 0.5);
-
-                // Adaptive diagonal split: connect the pair of opposite vertices with smaller height diff
-                if (y00 - y11).abs() < (y10 - y01).abs() {
-                    Self::emit_facet(
-                        p00,
-                        p01,
-                        p11,
-                        config.water_level,
-                        quad_moist,
-                        is_volcanic,
-                        sun_dir,
-                        ambient_light,
-                        &mut terrain_vertices,
-                    );
-                    Self::emit_facet(
-                        p00,
-                        p11,
-                        p10,
-                        config.water_level,
-                        quad_moist,
-                        is_volcanic,
-                        sun_dir,
-                        ambient_light,
-                        &mut terrain_vertices,
-                    );
-                } else {
-                    Self::emit_facet(
-                        p00,
-                        p01,
-                        p10,
-                        config.water_level,
-                        quad_moist,
-                        is_volcanic,
-                        sun_dir,
-                        ambient_light,
-                        &mut terrain_vertices,
-                    );
-                    Self::emit_facet(
-                        p10,
-                        p01,
-                        p11,
-                        config.water_level,
-                        quad_moist,
-                        is_volcanic,
-                        sun_dir,
-                        ambient_light,
-                        &mut terrain_vertices,
-                    );
+            // Fast batch height sampling across unique grid vertices
+            for i in 0..=self.grid_size {
+                let x = start_x + (i as f32) * self.cell_size;
+                let row_offset = (i as usize) * stride;
+                for j in 0..=self.grid_size {
+                    let z = start_z + (j as f32) * self.cell_size;
+                    height_cache[row_offset + (j as usize)] = config.get_height(x, z);
                 }
             }
+
+            let mut terrain_vertices = self.vertex_buffer.borrow_mut();
+            terrain_vertices.clear();
+
+            let is_volcanic = config.is_volcanic();
+
+            for i in 0..self.grid_size {
+                let x0 = start_x + (i as f32) * self.cell_size;
+                let x1 = x0 + self.cell_size;
+                let row0 = (i as usize) * stride;
+                let row1 = ((i + 1) as usize) * stride;
+
+                for j in 0..self.grid_size {
+                    let z0 = start_z + (j as f32) * self.cell_size;
+                    let z1 = z0 + self.cell_size;
+                    let j0 = j as usize;
+                    let j1 = (j + 1) as usize;
+
+                    let y00 = height_cache[row0 + j0];
+                    let y10 = height_cache[row1 + j0];
+                    let y01 = height_cache[row0 + j1];
+                    let y11 = height_cache[row1 + j1];
+
+                    let p00 = Vector3::new(x0, y00, z0);
+                    let p10 = Vector3::new(x1, y10, z0);
+                    let p01 = Vector3::new(x0, y01, z1);
+                    let p11 = Vector3::new(x1, y11, z1);
+
+                    let mid_x = (x0 + x1) * 0.5;
+                    let mid_z = (z0 + z1) * 0.5;
+
+                    // Quad moisture and settlement surface sampled once for both triangles
+                    let quad_moist = config.get_moisture(mid_x, mid_z);
+                    let settlement = config.get_settlement_surface(mid_x, mid_z);
+
+                    // Adaptive diagonal split: connect the pair of opposite vertices with smaller height diff
+                    if (y00 - y11).abs() < (y10 - y01).abs() {
+                        Self::emit_facet(
+                            p00,
+                            p01,
+                            p11,
+                            config.water_level,
+                            quad_moist,
+                            settlement,
+                            is_volcanic,
+                            sun_dir,
+                            ambient_light,
+                            &mut terrain_vertices,
+                        );
+                        Self::emit_facet(
+                            p00,
+                            p11,
+                            p10,
+                            config.water_level,
+                            quad_moist,
+                            settlement,
+                            is_volcanic,
+                            sun_dir,
+                            ambient_light,
+                            &mut terrain_vertices,
+                        );
+                    } else {
+                        Self::emit_facet(
+                            p00,
+                            p01,
+                            p10,
+                            config.water_level,
+                            quad_moist,
+                            settlement,
+                            is_volcanic,
+                            sun_dir,
+                            ambient_light,
+                            &mut terrain_vertices,
+                        );
+                        Self::emit_facet(
+                            p10,
+                            p01,
+                            p11,
+                            config.water_level,
+                            quad_moist,
+                            settlement,
+                            is_volcanic,
+                            sun_dir,
+                            ambient_light,
+                            &mut terrain_vertices,
+                        );
+                    }
+                }
+            }
+
+            *self.cached_key.borrow_mut() = Some(current_key);
+
+            let mut gpu_slot = self.gpu_mesh.borrow_mut();
+            if let Some(ref mut mesh) = *gpu_slot {
+                mesh.update_vertices(&terrain_vertices);
+            } else {
+                *gpu_slot = Some(GpuMesh::from_vertices(&terrain_vertices));
+            }
         }
 
-        // Draw terrain safely chunked to protect against Raylib batch limits
-        d3.draw_trimesh_buffered(&terrain_vertices);
+        // Draw terrain via retained GPU VAO/VBO in a single draw call
+        if let Some(ref mut mesh) = *self.gpu_mesh.borrow_mut() {
+            d3.draw_mesh(mesh);
+        }
     }
 
     /// Identifies the dominant biome at the given location for the HUD.
     pub fn get_biome_at(&self, config: &WorldConfig, x: f32, z: f32) -> BiomeType {
         let (h, n) = self.get_mesh_height(config, x, z);
+        if h >= config.water_level + 0.8 {
+            match config.get_settlement_surface(x, z) {
+                SettlementSurface::TownPlaza | SettlementSurface::TownGreen => {
+                    return BiomeType::TownPlaza;
+                }
+                SettlementSurface::CobbleRoad | SettlementSurface::DirtRoad => {
+                    return BiomeType::Road;
+                }
+                SettlementSurface::None => {}
+            }
+        }
         let m = config.get_moisture(x, z);
         classify_biome(h, config.water_level, m, n.y, config.is_volcanic())
     }

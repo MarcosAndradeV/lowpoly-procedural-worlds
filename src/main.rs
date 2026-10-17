@@ -4,6 +4,7 @@ mod noise;
 mod props;
 mod sky;
 mod terrain;
+mod towns;
 mod water;
 mod world;
 
@@ -14,6 +15,7 @@ use muxapp::{App, Input, MouseAxis, Scene, SceneAction, SceneLayerMode};
 use props::PropManager;
 use sky::SkyDome;
 use terrain::LowPolyTerrain;
+use towns::TownManager;
 use water::LowPolyWater;
 use world::{WorldConfig, WorldPreset};
 
@@ -43,6 +45,7 @@ pub struct WorldScene {
     pub terrain: LowPolyTerrain,
     pub water: LowPolyWater,
     pub props: PropManager,
+    pub towns: TownManager,
     pub sky: SkyDome,
     pub camera: ExplorerCamera,
     pub show_hud: bool,
@@ -50,12 +53,26 @@ pub struct WorldScene {
 
 impl Default for WorldScene {
     fn default() -> Self {
+        let default_cfg = WorldConfig::default();
+        let starter_town = default_cfg.get_town_in_cell(0, 0);
+        let mut camera = ExplorerCamera::default();
+        if starter_town.valid {
+            camera.position = Vector3::new(
+                starter_town.x,
+                starter_town.y + 42.0,
+                starter_town.z + 115.0,
+            );
+            camera.yaw = 180.0;
+            camera.pitch = -16.0;
+        }
+
         Self {
             terrain: LowPolyTerrain::default(),
             water: LowPolyWater::default(),
             props: PropManager::default(),
+            towns: TownManager::default(),
             sky: SkyDome::default(),
-            camera: ExplorerCamera::default(),
+            camera,
             show_hud: true,
         }
     }
@@ -104,6 +121,9 @@ impl Scene<AppState> for WorldScene {
         if input.is_action_pressed("toggle_props") {
             state.props_enabled = !state.props_enabled;
         }
+        if input.is_action_pressed("toggle_towns") {
+            state.config.towns_enabled = !state.config.towns_enabled;
+        }
         if input.is_action_pressed("toggle_water") {
             state.water_animated = !state.water_animated;
         }
@@ -119,6 +139,7 @@ impl Scene<AppState> for WorldScene {
 
         // Synchronize state
         self.props.enabled = state.props_enabled;
+        self.towns.enabled = state.config.towns_enabled;
         self.water.animated = state.water_animated;
         self.camera.speed = state.camera_speed;
 
@@ -144,7 +165,19 @@ impl Scene<AppState> for WorldScene {
             self.terrain
                 .draw(d3, &state.config, cam_pos.x, cam_pos.z, sun_dir, ambient);
 
-            // 3. Procedural vegetation and rock props
+            // 3. Medieval fantasy towns, cobblestone roads & wooden bridges
+            self.towns.draw(
+                d3,
+                &self.terrain,
+                &state.config,
+                cam_pos.x,
+                cam_pos.z,
+                sun_dir,
+                ambient,
+                self.sky.time_of_day,
+            );
+
+            // 4. Procedural vegetation and rock props
             self.props.draw(
                 d3,
                 &self.terrain,
@@ -155,7 +188,7 @@ impl Scene<AppState> for WorldScene {
                 ambient,
             );
 
-            // 4. Faceted animated ocean water (or molten lava in volcanic worlds)
+            // 5. Faceted animated ocean water (or molten lava in volcanic worlds)
             self.water.draw(
                 d3,
                 state.config.water_level,
@@ -191,9 +224,10 @@ impl Scene<AppState> for WorldScene {
         TextElement::new(stats_text).place(style, "hud_stats");
 
         let biome_text = format!(
-            "Biome: {} | Sun: {} | Props: {}",
+            "Biome: {} | Sun: {} | Towns: {} | Trees: {}",
             biome.name(),
             self.sky.time_of_day.name(),
+            if state.config.towns_enabled { "ON" } else { "OFF" },
             if self.props.enabled { "ON" } else { "OFF" }
         );
         TextElement::new(biome_text).place(style, "hud_biome");
@@ -244,7 +278,7 @@ impl Scene<AppState> for WorldScene {
 
         // Bottom Controls Bar
         RectangleElement.place(style, "footer_bar");
-        TextElement::new("WASD: Move | Mouse: Look | Shift: Boost | Ctrl/Space: Down/Up | F: Mode | R: Seed | 1-4: Presets | T: Trees | O: Waves | L: Sun | H: HUD | P/Esc: Pause").place(style, "footer_text");
+        TextElement::new("WASD: Move | Mouse: Look | Shift: Boost | F: Walk/Fly | R: Seed | 1-4: Presets | V: Towns | T: Trees | O: Waves | L: Sun | H: HUD | P/Esc: Pause").place(style, "footer_text");
 
         SceneAction::None
     }
@@ -303,6 +337,7 @@ impl Scene<AppState> for PauseOverlayScene {
         // Feature toggle checkboxes
         Checkbox::bind("Vegetation & Rocks", &mut state.props_enabled, style, "chk_props");
         Checkbox::bind("Animated Ocean Waves", &mut state.water_animated, style, "chk_waves");
+        Checkbox::bind("Fantasy Towns & Roads", &mut state.config.towns_enabled, style, "chk_towns");
 
         // Modal action buttons
         let resume_btn = Button::new("Resume World");
@@ -323,7 +358,7 @@ impl Scene<AppState> for PauseOverlayScene {
             state.config.randomize_seed();
         }
         if quit_btn.clicked() {
-            std::process::exit(0);
+            request_exit();
         }
 
         SceneAction::None
@@ -353,6 +388,7 @@ fn main() {
     .register_action("preset_3", [KEY_THREE])
     .register_action("preset_4", [KEY_FOUR])
     .register_action("toggle_props", [KEY_T])
+    .register_action("toggle_towns", [KEY_V])
     .register_action("toggle_water", [KEY_O])
     .register_action("cycle_time", [KEY_L])
     .register_action("toggle_cam_mode", [KEY_F])

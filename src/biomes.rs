@@ -14,6 +14,8 @@ pub enum BiomeType {
     MountainRock,
     SnowPeak,
     VolcanicBasalt,
+    TownPlaza,
+    Road,
 }
 
 impl BiomeType {
@@ -31,6 +33,8 @@ impl BiomeType {
             BiomeType::MountainRock => "Mountain Crags",
             BiomeType::SnowPeak => "Snow Peak",
             BiomeType::VolcanicBasalt => "Volcanic Basin",
+            BiomeType::TownPlaza => "Medieval Town",
+            BiomeType::Road => "King's Highway",
         }
     }
 
@@ -48,6 +52,8 @@ impl BiomeType {
             BiomeType::MountainRock => Color { r: 124, g: 122, b: 128, a: 255 },
             BiomeType::SnowPeak => Color { r: 242, g: 246, b: 252, a: 255 },
             BiomeType::VolcanicBasalt => Color { r: 74, g: 62, b: 86, a: 255 },
+            BiomeType::TownPlaza => Color { r: 162, g: 150, b: 134, a: 255 },
+            BiomeType::Road => Color { r: 154, g: 126, b: 94, a: 255 },
         }
     }
 
@@ -67,7 +73,7 @@ impl BiomeType {
 
     /// Determines whether rocks/boulders can spawn on this biome.
     pub fn allows_rocks(&self) -> bool {
-        !matches!(self, BiomeType::DeepOcean | BiomeType::Ocean)
+        !matches!(self, BiomeType::DeepOcean | BiomeType::Ocean | BiomeType::TownPlaza | BiomeType::Road)
     }
 }
 

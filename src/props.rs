@@ -407,12 +407,28 @@ impl PropGenerator {
 
 use std::cell::RefCell;
 
-/// Spatially manages and batches procedural props across the landscape.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PropCacheKey {
+    snap_x: i32,
+    snap_z: i32,
+    seed: u64,
+    preset_id: u8,
+    water_bits: u32,
+    towns_enabled: bool,
+    ambient_bits: u32,
+}
+
+const MIN_PROP_GPU_CAPACITY: usize = 72_000;
+
+/// Spatially manages, caches, and batches procedural props across the landscape.
 pub struct PropManager {
     pub enabled: bool,
     pub cell_size: f32,
     pub radius: i32,
     vertex_buffer: RefCell<Vec<Vertex3D>>,
+    cached_key: RefCell<Option<PropCacheKey>>,
+    gpu_mesh: RefCell<Option<GpuMesh>>,
+    gpu_capacity: std::cell::Cell<usize>,
 }
 
 impl Default for PropManager {
@@ -421,7 +437,10 @@ impl Default for PropManager {
             enabled: true,
             cell_size: 32.0,
             radius: 16,
-            vertex_buffer: RefCell::new(Vec::with_capacity(16384)),
+            vertex_buffer: RefCell::new(Vec::with_capacity(MIN_PROP_GPU_CAPACITY)),
+            cached_key: RefCell::new(None),
+            gpu_mesh: RefCell::new(None),
+            gpu_capacity: std::cell::Cell::new(MIN_PROP_GPU_CAPACITY),
         }
     }
 }
@@ -446,98 +465,212 @@ impl PropManager {
         let snap_x = (center_x / self.cell_size).floor() as i32;
         let snap_z = (center_z / self.cell_size).floor() as i32;
 
-        let mut prop_vertices = self.vertex_buffer.borrow_mut();
-        prop_vertices.clear();
+        let current_key = PropCacheKey {
+            snap_x,
+            snap_z,
+            seed: config.seed,
+            preset_id: config.preset as u8,
+            water_bits: config.water_level.to_bits(),
+            towns_enabled: config.towns_enabled,
+            ambient_bits: ambient.to_bits(),
+        };
 
-        for dx in -self.radius..=self.radius {
-            for dz in -self.radius..=self.radius {
-                let cell_x = snap_x + dx;
-                let cell_z = snap_z + dz;
+        if *self.cached_key.borrow() != Some(current_key) {
+            let mut prop_vertices = self.vertex_buffer.borrow_mut();
+            prop_vertices.clear();
 
-                // Deterministic pseudo-random hash for this cell
-                let h = Self::hash2d(cell_x, cell_z, config.seed);
+            for dx in -self.radius..=self.radius {
+                for dz in -self.radius..=self.radius {
+                    let cell_x = snap_x + dx;
+                    let cell_z = snap_z + dz;
 
-                // Check spawn probability (approx 45% of cells spawn a prop)
-                if (h & 0xFF) > 115 {
-                    continue;
-                }
+                    // Deterministic pseudo-random hash for this cell
+                    let h = Self::hash2d(cell_x, cell_z, config.seed);
 
-                let sub_x = ((h >> 8) & 0xFF) as f32 * 0.003921569;
-                let sub_z = ((h >> 16) & 0xFF) as f32 * 0.003921569;
+                    // Check spawn probability (approx 45% of cells spawn a prop)
+                    if (h & 0xFF) > 115 {
+                        continue;
+                    }
 
-                let wx = (cell_x as f32 + sub_x) * self.cell_size;
-                let wz = (cell_z as f32 + sub_z) * self.cell_size;
+                    let sub_x = ((h >> 8) & 0xFF) as f32 * 0.003921569;
+                    let sub_z = ((h >> 16) & 0xFF) as f32 * 0.003921569;
 
-                // Evaluate exact height and normal on the rendered low-poly triangle facet
-                let (wy, normal) = terrain.get_mesh_height(config, wx, wz);
+                    let wx = (cell_x as f32 + sub_x) * self.cell_size;
+                    let wz = (cell_z as f32 + sub_z) * self.cell_size;
 
-                // Keep props well clear of water waves and shoreline facets
-                if wy < config.water_level + 3.8 || wy > config.water_level + 82.0 {
-                    continue;
-                }
+                    // Evaluate exact height and normal on the rendered low-poly triangle facet
+                    let (wy, normal) = terrain.get_mesh_height(config, wx, wz);
 
-                // Props don't grow on steep cliffs
-                if normal.y < 0.74 {
-                    continue;
-                }
+                    // Keep props well clear of water waves and shoreline facets
+                    if wy < config.water_level + 3.8 || wy > config.water_level + 82.0 {
+                        continue;
+                    }
 
-                let moisture = config.get_moisture(wx, wz);
-                let biome = crate::biomes::classify_biome(
-                    wy,
-                    config.water_level,
-                    moisture,
-                    normal.y,
-                    config.is_volcanic(),
-                );
-                // Scale matched to 18.0 terrain cell size
-                let scale = 1.35 + (((h >> 24) & 0x7F) as f32 * 0.0078125) * 0.75;
-                let pos = Vector3::new(wx, wy, wz);
+                    // Props don't grow on steep cliffs
+                    if normal.y < 0.74 {
+                        continue;
+                    }
 
-                match biome {
-                    BiomeType::Beach => {
-                        if (h & 3) == 0 {
-                            PropGenerator::build_palm_tree(pos, scale * 1.05, sun_dir, ambient, &mut prop_vertices);
-                        } else {
-                            PropGenerator::build_rock(pos, scale * 0.75, sun_dir, ambient, &mut prop_vertices);
+                    // Keep wild trees and boulders off town plazas, houses, and roads
+                    if config.get_settlement_surface(wx, wz)
+                        != crate::towns::SettlementSurface::None
+                    {
+                        continue;
+                    }
+
+                    let moisture = config.get_moisture(wx, wz);
+                    let biome = crate::biomes::classify_biome(
+                        wy,
+                        config.water_level,
+                        moisture,
+                        normal.y,
+                        config.is_volcanic(),
+                    );
+                    // Scale matched to 18.0 terrain cell size
+                    let scale = 1.35 + (((h >> 24) & 0x7F) as f32 * 0.0078125) * 0.75;
+                    let pos = Vector3::new(wx, wy, wz);
+
+                    match biome {
+                        BiomeType::Beach => {
+                            if (h & 3) == 0 {
+                                PropGenerator::build_palm_tree(
+                                    pos,
+                                    scale * 1.05,
+                                    sun_dir,
+                                    ambient,
+                                    &mut prop_vertices,
+                                );
+                            } else {
+                                PropGenerator::build_rock(
+                                    pos,
+                                    scale * 0.75,
+                                    sun_dir,
+                                    ambient,
+                                    &mut prop_vertices,
+                                );
+                            }
                         }
-                    }
-                    BiomeType::Plains => {
-                        if (h & 3) == 0 && wy < config.water_level + 8.5 {
-                            PropGenerator::build_palm_tree(pos, scale * 1.05, sun_dir, ambient, &mut prop_vertices);
-                        } else if (h & 3) < 2 {
-                            PropGenerator::build_deciduous_tree(pos, scale, sun_dir, ambient, &mut prop_vertices);
-                        } else if (h & 3) == 2 {
-                            PropGenerator::build_pine_tree(pos, scale * 0.95, sun_dir, ambient, &mut prop_vertices);
-                        } else {
-                            PropGenerator::build_rock(pos, scale * 0.65, sun_dir, ambient, &mut prop_vertices);
+                        BiomeType::Plains => {
+                            if (h & 3) == 0 && wy < config.water_level + 8.5 {
+                                PropGenerator::build_palm_tree(
+                                    pos,
+                                    scale * 1.05,
+                                    sun_dir,
+                                    ambient,
+                                    &mut prop_vertices,
+                                );
+                            } else if (h & 3) < 2 {
+                                PropGenerator::build_deciduous_tree(
+                                    pos,
+                                    scale,
+                                    sun_dir,
+                                    ambient,
+                                    &mut prop_vertices,
+                                );
+                            } else if (h & 3) == 2 {
+                                PropGenerator::build_pine_tree(
+                                    pos,
+                                    scale * 0.95,
+                                    sun_dir,
+                                    ambient,
+                                    &mut prop_vertices,
+                                );
+                            } else {
+                                PropGenerator::build_rock(
+                                    pos,
+                                    scale * 0.65,
+                                    sun_dir,
+                                    ambient,
+                                    &mut prop_vertices,
+                                );
+                            }
                         }
-                    }
-                    BiomeType::Forest => {
-                        if (h & 3) < 3 {
-                            PropGenerator::build_pine_tree(pos, scale * 1.15, sun_dir, ambient, &mut prop_vertices);
-                        } else {
-                            PropGenerator::build_deciduous_tree(pos, scale, sun_dir, ambient, &mut prop_vertices);
+                        BiomeType::Forest => {
+                            if (h & 3) < 3 {
+                                PropGenerator::build_pine_tree(
+                                    pos,
+                                    scale * 1.15,
+                                    sun_dir,
+                                    ambient,
+                                    &mut prop_vertices,
+                                );
+                            } else {
+                                PropGenerator::build_deciduous_tree(
+                                    pos,
+                                    scale,
+                                    sun_dir,
+                                    ambient,
+                                    &mut prop_vertices,
+                                );
+                            }
                         }
-                    }
-                    BiomeType::Highland => {
-                        if (h & 3) < 2 {
-                            PropGenerator::build_pine_tree(pos, scale * 0.9, sun_dir, ambient, &mut prop_vertices);
-                        } else {
-                            PropGenerator::build_rock(pos, scale * 1.0, sun_dir, ambient, &mut prop_vertices);
+                        BiomeType::Highland => {
+                            if (h & 3) < 2 {
+                                PropGenerator::build_pine_tree(
+                                    pos,
+                                    scale * 0.9,
+                                    sun_dir,
+                                    ambient,
+                                    &mut prop_vertices,
+                                );
+                            } else {
+                                PropGenerator::build_rock(
+                                    pos,
+                                    scale * 1.0,
+                                    sun_dir,
+                                    ambient,
+                                    &mut prop_vertices,
+                                );
+                            }
                         }
+                        BiomeType::VolcanicBasalt if (h & 3) == 0 => {
+                            PropGenerator::build_volcanic_spire(
+                                pos,
+                                scale * 1.15,
+                                sun_dir,
+                                ambient,
+                                &mut prop_vertices,
+                            );
+                        }
+                        BiomeType::Desert | BiomeType::Canyon | BiomeType::MountainRock
+                            if (h & 1) == 0 =>
+                        {
+                            PropGenerator::build_rock(
+                                pos,
+                                scale * 1.1,
+                                sun_dir,
+                                ambient,
+                                &mut prop_vertices,
+                            );
+                        }
+                        _ => {}
                     }
-                    BiomeType::VolcanicBasalt if (h & 3) == 0 => {
-                        PropGenerator::build_volcanic_spire(pos, scale * 1.15, sun_dir, ambient, &mut prop_vertices);
-                    }
-                    BiomeType::Desert | BiomeType::Canyon | BiomeType::MountainRock if (h & 1) == 0 => {
-                        PropGenerator::build_rock(pos, scale * 1.1, sun_dir, ambient, &mut prop_vertices);
-                    }
-                    _ => {}
                 }
+            }
+
+            *self.cached_key.borrow_mut() = Some(current_key);
+
+            let mut cap = self.gpu_capacity.get();
+            if prop_vertices.len() > cap {
+                cap = (prop_vertices.len() * 3 / 2).div_ceil(3) * 3;
+                self.gpu_capacity.set(cap);
+            }
+            prop_vertices.resize(
+                cap,
+                Vertex3D::new(Vector3::zero(), Color { r: 0, g: 0, b: 0, a: 0 }),
+            );
+
+            let mut gpu_slot = self.gpu_mesh.borrow_mut();
+            if let Some(ref mut mesh) = *gpu_slot {
+                mesh.update_vertices(&prop_vertices);
+            } else {
+                *gpu_slot = Some(GpuMesh::from_vertices(&prop_vertices));
             }
         }
 
-        d3.draw_trimesh_buffered(&prop_vertices);
+        if let Some(ref mut mesh) = *self.gpu_mesh.borrow_mut() {
+            d3.draw_mesh(mesh);
+        }
     }
 
     #[inline(always)]

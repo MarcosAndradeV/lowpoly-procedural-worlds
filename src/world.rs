@@ -1,4 +1,12 @@
 use crate::noise::NoiseGenerator;
+use crate::towns::{
+    can_connect_towns, compute_town_for_cell, evaluate_road_segment, SettlementSurface, TownSite,
+    TOWN_CELL_SIZE,
+};
+use std::cell::Cell;
+
+const TOWN_CACHE_DIM: i32 = 16;
+const TOWN_CACHE_SIZE: usize = (TOWN_CACHE_DIM * TOWN_CACHE_DIM) as usize;
 
 /// Preset configurations that define the generation character of the world.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,9 +46,11 @@ pub struct WorldConfig {
     pub height_scale: f32,
     pub base_freq: f32,
     pub octaves: usize,
+    pub towns_enabled: bool,
     pub terrain_noise: NoiseGenerator,
     pub moisture_noise: NoiseGenerator,
     pub detail_noise: NoiseGenerator,
+    town_cache: Vec<Cell<TownSite>>,
 }
 
 impl Default for WorldConfig {
@@ -62,9 +72,11 @@ impl WorldConfig {
             height_scale: 70.0,
             base_freq: 0.0018,
             octaves: 6,
+            towns_enabled: true,
             terrain_noise,
             moisture_noise,
             detail_noise,
+            town_cache: vec![Cell::new(TownSite::default()); TOWN_CACHE_SIZE],
         };
         config.apply_preset_parameters();
         config
@@ -115,8 +127,35 @@ impl WorldConfig {
         self.detail_noise = NoiseGenerator::new(self.seed.wrapping_add(555));
     }
 
-    /// Evaluates terrain elevation at coordinates `(x, z)`.
-    pub fn get_height(&self, x: f32, z: f32) -> f32 {
+    /// Collision-free O(1) 2D toroidal cache lookup for the town inside macro-cell `(mx, mz)`.
+    #[inline]
+    pub fn get_town_in_cell(&self, mx: i32, mz: i32) -> TownSite {
+        if !self.towns_enabled {
+            return TownSite::default();
+        }
+        let idx = ((mx.rem_euclid(TOWN_CACHE_DIM) as usize) << 4)
+            | (mz.rem_euclid(TOWN_CACHE_DIM) as usize);
+
+        let cached = self.town_cache[idx].get();
+        let water_bits = self.water_level.to_bits();
+        let preset_id = self.preset as u8;
+
+        if cached.mx == mx
+            && cached.mz == mz
+            && cached.seed == self.seed
+            && cached.preset_id == preset_id
+            && cached.water_bits == water_bits
+        {
+            return cached;
+        }
+
+        let computed = compute_town_for_cell(self, mx, mz);
+        self.town_cache[idx].set(computed);
+        computed
+    }
+
+    /// Evaluates unflattened raw procedural terrain elevation at coordinates `(x, z)`.
+    pub fn get_raw_height(&self, x: f32, z: f32) -> f32 {
         match self.preset {
             WorldPreset::Archipelago => {
                 // Organic continent/island shapes using domain warping
@@ -152,6 +191,118 @@ impl WorldConfig {
                 (ridges * 0.65 + warp * 0.25 - crater * 0.25) * self.height_scale
             }
         }
+    }
+
+    /// Evaluates terrain elevation at coordinates `(x, z)` including O(1) single-cell town plateau flattening.
+    pub fn get_height(&self, x: f32, z: f32) -> f32 {
+        let h = self.get_raw_height(x, z);
+        if !self.towns_enabled {
+            return h;
+        }
+
+        let mx = (x / TOWN_CELL_SIZE).floor() as i32;
+        let mz = (z / TOWN_CELL_SIZE).floor() as i32;
+        let town = self.get_town_in_cell(mx, mz);
+        if !town.valid {
+            return h;
+        }
+
+        // Fast AABB reject: 97%+ of vertices exit here in 2 float ops
+        let dx = x - town.x;
+        let dz = z - town.z;
+        if dx.abs() >= town.blend_radius || dz.abs() >= town.blend_radius {
+            return h;
+        }
+
+        let dist_sq = dx * dx + dz * dz;
+        if dist_sq >= town.blend_radius * town.blend_radius {
+            return h;
+        }
+
+        let dist = dist_sq.sqrt();
+        let target_flat = (town.y * 0.94 + h * 0.06).max(self.water_level + 4.5);
+        if dist <= town.radius {
+            target_flat
+        } else {
+            let t = (dist - town.radius) / (town.blend_radius - town.radius);
+            let s = t * t * (3.0 - 2.0 * t);
+            target_flat + (h - target_flat) * s
+        }
+    }
+
+    /// Evaluates whether `(x, z)` lies on a town plaza, village green, cobblestone street, or dirt road.
+    pub fn get_settlement_surface(&self, x: f32, z: f32) -> SettlementSurface {
+        if !self.towns_enabled {
+            return SettlementSurface::None;
+        }
+
+        let mx = (x / TOWN_CELL_SIZE).floor() as i32;
+        let mz = (z / TOWN_CELL_SIZE).floor() as i32;
+        let mut town = self.get_town_in_cell(mx, mz);
+        if !town.valid {
+            return SettlementSurface::None;
+        }
+
+        let dx = x - town.x;
+        let dz = z - town.z;
+        if dx.abs() < town.radius * 1.05 && dz.abs() < town.radius * 1.05 {
+            let dist = (dx * dx + dz * dz).sqrt();
+            if dist < town.radius * 0.38
+                || (dist > town.radius * 0.58 && dist < town.radius * 0.74)
+            {
+                return SettlementSurface::TownPlaza;
+            } else if dist < town.radius * 0.98 {
+                return SettlementSurface::TownGreen;
+            }
+        }
+
+        // Lazy one-time computation of valid cardinal road connections for this town
+        if (town.conn_mask & 0x80) == 0 {
+            let mut mask = 0x80_u8;
+            let n_e = self.get_town_in_cell(mx + 1, mz);
+            let n_w = self.get_town_in_cell(mx - 1, mz);
+            let n_s = self.get_town_in_cell(mx, mz + 1);
+            let n_n = self.get_town_in_cell(mx, mz - 1);
+            if can_connect_towns(self, &town, &n_e) {
+                mask |= 1;
+            }
+            if can_connect_towns(self, &town, &n_w) {
+                mask |= 2;
+            }
+            if can_connect_towns(self, &town, &n_s) {
+                mask |= 4;
+            }
+            if can_connect_towns(self, &town, &n_n) {
+                mask |= 8;
+            }
+            town.conn_mask = mask;
+            let idx = ((mx.rem_euclid(TOWN_CACHE_DIM) as usize) << 4)
+                | (mz.rem_euclid(TOWN_CACHE_DIM) as usize);
+            self.town_cache[idx].set(town);
+        }
+
+        let active_roads = town.conn_mask & 0x0F;
+        if active_roads == 0 {
+            return SettlementSurface::None;
+        }
+
+        let dirs: [(u8, i32, i32); 4] = [(1, 1, 0), (2, -1, 0), (4, 0, 1), (8, 0, -1)];
+        for &(bit, dmx, dmz) in &dirs {
+            if (active_roads & bit) != 0 {
+                let n = self.get_town_in_cell(mx + dmx, mz + dmz);
+                if let Some((t, dist)) = evaluate_road_segment(&town, &n, x, z)
+                    && dist <= 10.5
+                {
+                    return if !(0.22..=0.78).contains(&t) {
+                        SettlementSurface::CobbleRoad
+                    } else {
+                        SettlementSurface::DirtRoad
+                    };
+                }
+            }
+        }
+
+        SettlementSurface::None
     }
 
     /// Evaluates moisture level in `[0.0, 1.0]` at coordinates `(x, z)`.
