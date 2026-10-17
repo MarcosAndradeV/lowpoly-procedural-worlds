@@ -16,11 +16,31 @@ impl PropGenerator {
         ambient: f32,
         verts: &mut Vec<Vertex3D>,
     ) {
-        let trunk_col = Color { r: 88, g: 54, b: 34, a: 255 };
+        let trunk_col = Color {
+            r: 88,
+            g: 54,
+            b: 34,
+            a: 255,
+        };
         let tier_colors = [
-            Color { r: 28, g: 82, b: 40, a: 255 },
-            Color { r: 36, g: 100, b: 48, a: 255 },
-            Color { r: 46, g: 118, b: 56, a: 255 },
+            Color {
+                r: 28,
+                g: 82,
+                b: 40,
+                a: 255,
+            },
+            Color {
+                r: 36,
+                g: 100,
+                b: 48,
+                a: 255,
+            },
+            Color {
+                r: 46,
+                g: 118,
+                b: 56,
+                a: 255,
+            },
         ];
 
         let trunk_radius = 0.45 * scale;
@@ -68,10 +88,30 @@ impl PropGenerator {
         ambient: f32,
         verts: &mut Vec<Vertex3D>,
     ) {
-        let trunk_col = Color { r: 96, g: 62, b: 40, a: 255 };
-        let lower_leaf_col = Color { r: 44, g: 122, b: 48, a: 255 };
-        let mid_leaf_col = Color { r: 58, g: 146, b: 56, a: 255 };
-        let top_leaf_col = Color { r: 74, g: 164, b: 64, a: 255 };
+        let trunk_col = Color {
+            r: 96,
+            g: 62,
+            b: 40,
+            a: 255,
+        };
+        let lower_leaf_col = Color {
+            r: 44,
+            g: 122,
+            b: 48,
+            a: 255,
+        };
+        let mid_leaf_col = Color {
+            r: 58,
+            g: 146,
+            b: 56,
+            a: 255,
+        };
+        let top_leaf_col = Color {
+            r: 74,
+            g: 164,
+            b: 64,
+            a: 255,
+        };
 
         let trunk_radius = 0.48 * scale;
         let trunk_height = 2.8 * scale;
@@ -145,9 +185,24 @@ impl PropGenerator {
         ambient: f32,
         verts: &mut Vec<Vertex3D>,
     ) {
-        let trunk_col = Color { r: 122, g: 86, b: 52, a: 255 };
-        let frond_upper = Color { r: 58, g: 156, b: 48, a: 255 };
-        let frond_outer = Color { r: 46, g: 134, b: 40, a: 255 };
+        let trunk_col = Color {
+            r: 122,
+            g: 86,
+            b: 52,
+            a: 255,
+        };
+        let frond_upper = Color {
+            r: 58,
+            g: 156,
+            b: 48,
+            a: 255,
+        };
+        let frond_outer = Color {
+            r: 46,
+            g: 134,
+            b: 40,
+            a: 255,
+        };
 
         let sides = 5;
         let seg_h = 1.55 * scale;
@@ -159,15 +214,7 @@ impl PropGenerator {
             let r_top = (0.34 - sf * 0.07) * scale;
             let base = Vector3::new(pos.x, pos.y + sf * seg_h, pos.z);
             Self::append_cylinder(
-                base,
-                r_bot,
-                r_top,
-                seg_h,
-                sides,
-                trunk_col,
-                light_dir,
-                ambient,
-                verts,
+                base, r_bot, r_top, seg_h, sides, trunk_col, light_dir, ambient, verts,
             );
         }
 
@@ -213,20 +260,18 @@ impl PropGenerator {
         ambient: f32,
         verts: &mut Vec<Vertex3D>,
     ) {
-        let rock_col = Color { r: 118, g: 116, b: 122, a: 255 };
+        let rock_col = Color {
+            r: 118,
+            g: 116,
+            b: 122,
+            a: 255,
+        };
         let sides = 6;
         let radius = 1.65 * scale;
         let height = 1.45 * scale;
 
         Self::append_cone(
-            pos,
-            radius,
-            height,
-            sides,
-            rock_col,
-            light_dir,
-            ambient,
-            verts,
+            pos, radius, height, sides, rock_col, light_dir, ambient, verts,
         );
     }
 
@@ -238,7 +283,12 @@ impl PropGenerator {
         ambient: f32,
         verts: &mut Vec<Vertex3D>,
     ) {
-        let spire_col = Color { r: 95, g: 68, b: 92, a: 255 };
+        let spire_col = Color {
+            r: 95,
+            g: 68,
+            b: 92,
+            a: 255,
+        };
         let sides = 5;
         let radius = 1.35 * scale;
         let height = 2.8 * scale;
@@ -408,8 +458,10 @@ impl PropGenerator {
 use crate::camera::ExplorerCamera;
 use std::cell::RefCell;
 
+pub const PROP_DENSIT: i32 = 1; // NOTE: 4 is perfect
+pub const PROP_CELL_SIZE: f32 = 32.0 / PROP_DENSIT as f32;
 pub const PROP_CHUNK_CELLS: i32 = 8;
-pub const PROP_CHUNK_RADIUS: i32 = 2;
+pub const PROP_CHUNK_RADIUS: i32 = 2 * PROP_DENSIT;
 pub const PROP_CHUNK_DIM: i32 = PROP_CHUNK_RADIUS * 2 + 1;
 pub const TOTAL_PROP_CHUNKS: usize = (PROP_CHUNK_DIM * PROP_CHUNK_DIM) as usize;
 const CHUNK_PROP_GPU_CAPACITY: usize = 9_600;
@@ -466,7 +518,7 @@ impl Default for PropManager {
         }
         Self {
             enabled: true,
-            cell_size: 32.0,
+            cell_size: PROP_CELL_SIZE,
             chunk_cells: PROP_CHUNK_CELLS,
             chunk_radius: PROP_CHUNK_RADIUS,
             vertex_buffer: RefCell::new(Vec::with_capacity(CHUNK_PROP_GPU_CAPACITY)),
@@ -734,7 +786,15 @@ impl PropManager {
                         }
                         prop_vertices.resize(
                             slot.gpu_capacity,
-                            Vertex3D::new(Vector3::zero(), Color { r: 0, g: 0, b: 0, a: 0 }),
+                            Vertex3D::new(
+                                Vector3::zero(),
+                                Color {
+                                    r: 0,
+                                    g: 0,
+                                    b: 0,
+                                    a: 0,
+                                },
+                            ),
                         );
                         if let Some(ref mut mesh) = slot.gpu_mesh {
                             mesh.update_vertices(&prop_vertices);

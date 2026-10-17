@@ -172,7 +172,7 @@ impl WorldConfig {
                 let detail = self.detail_noise.fbm2d(x, z, 3, self.base_freq * 3.5, 2.0, 0.4);
                 // Sharpen peaks with non-linear power curve
                 let mountain_shape = ridges.powf(1.4);
-                (base_hills * 0.35 + mountain_shape * 0.75 + detail * 0.1) * self.height_scale
+                (base_hills * 0.35 + mountain_shape * 0.75 + detail * 0.1) * self.height_scale * 1.5
             }
             WorldPreset::Canyonlands => {
                 // Terraced plateaus: quantize height slightly to form natural rock strata

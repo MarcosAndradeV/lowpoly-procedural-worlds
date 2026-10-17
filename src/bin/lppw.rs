@@ -1,23 +1,15 @@
-mod biomes;
-mod camera;
-mod noise;
-mod props;
-mod sky;
-mod terrain;
-mod towns;
-mod water;
-mod world;
 
-use camera::ExplorerCamera;
 use muxapp::muxui::d3::*;
 use muxapp::muxui::*;
 use muxapp::{App, Input, MouseAxis, Scene, SceneAction, SceneLayerMode};
-use props::PropManager;
-use sky::SkyDome;
-use terrain::LowPolyTerrain;
-use towns::TownManager;
-use water::LowPolyWater;
-use world::{WorldConfig, WorldPreset};
+use lowpoly_procedural_worlds::camera::ExplorerCamera;
+use lowpoly_procedural_worlds::network::MultiplayerClient;
+use lowpoly_procedural_worlds::props::PropManager;
+use lowpoly_procedural_worlds::sky::SkyDome;
+use lowpoly_procedural_worlds::terrain::LowPolyTerrain;
+use lowpoly_procedural_worlds::towns::TownManager;
+use lowpoly_procedural_worlds::water::LowPolyWater;
+use lowpoly_procedural_worlds::world::{WorldConfig, WorldPreset};
 
 /// Shared state across scenes in the MUX SceneRouter.
 pub struct AppState {
@@ -49,6 +41,7 @@ pub struct WorldScene {
     pub sky: SkyDome,
     pub camera: ExplorerCamera,
     pub show_hud: bool,
+    pub net: MultiplayerClient,
 }
 
 impl Default for WorldScene {
@@ -74,6 +67,7 @@ impl Default for WorldScene {
             sky: SkyDome::default(),
             camera,
             show_hud: true,
+            net: MultiplayerClient::default(),
         }
     }
 }
@@ -82,9 +76,11 @@ impl Scene<AppState> for WorldScene {
     fn on_enter(&mut self, _ctx: &mut AppState, _style: &Style) {
         set_cursor_mode(CursorMode::Captured);
     }
+
     fn on_exit(&mut self, _ctx: &mut AppState) {
         set_cursor_mode(CursorMode::Normal);
     }
+
     fn update(
         &mut self,
         state: &mut AppState,
@@ -100,23 +96,35 @@ impl Scene<AppState> for WorldScene {
         // Handle external preset requests from UI or pause menu
         if let Some(preset) = state.preset_request.take() {
             state.config.set_preset(preset);
+            self.net
+                .notify_world_changed(&state.config, self.sky.time_of_day);
         }
 
         // Semantic action hotkeys
         if input.is_action_pressed("randomize_seed") {
             state.config.randomize_seed();
+            self.net
+                .notify_world_changed(&state.config, self.sky.time_of_day);
         }
         if input.is_action_pressed("preset_1") {
             state.config.set_preset(WorldPreset::Archipelago);
+            self.net
+                .notify_world_changed(&state.config, self.sky.time_of_day);
         }
         if input.is_action_pressed("preset_2") {
             state.config.set_preset(WorldPreset::AlpineHighlands);
+            self.net
+                .notify_world_changed(&state.config, self.sky.time_of_day);
         }
         if input.is_action_pressed("preset_3") {
             state.config.set_preset(WorldPreset::Canyonlands);
+            self.net
+                .notify_world_changed(&state.config, self.sky.time_of_day);
         }
         if input.is_action_pressed("preset_4") {
             state.config.set_preset(WorldPreset::AlienCrags);
+            self.net
+                .notify_world_changed(&state.config, self.sky.time_of_day);
         }
         if input.is_action_pressed("toggle_props") {
             state.props_enabled = !state.props_enabled;
@@ -129,12 +137,21 @@ impl Scene<AppState> for WorldScene {
         }
         if input.is_action_pressed("cycle_time") {
             self.sky.cycle_time();
+            self.net
+                .notify_world_changed(&state.config, self.sky.time_of_day);
         }
         if input.is_action_pressed("toggle_cam_mode") {
             self.camera.mode = self.camera.mode.toggle();
         }
         if input.is_action_pressed("toggle_hud") {
             self.show_hud = !self.show_hud;
+        }
+        if input.is_action_pressed("beacon") {
+            self.net
+                .place_beacon(&self.camera, &self.terrain, &state.config);
+        }
+        if input.is_action_pressed("reconnect") {
+            self.net.try_connect();
         }
 
         // Synchronize state
@@ -145,6 +162,12 @@ impl Scene<AppState> for WorldScene {
 
         // Update systems
         self.camera.update(input, &self.terrain, &state.config, dt);
+        self.net.update(
+            &mut self.camera,
+            &mut state.config,
+            &mut self.sky.time_of_day,
+            dt,
+        );
         self.water.update(dt);
         self.sky.update(dt);
 
@@ -197,10 +220,16 @@ impl Scene<AppState> for WorldScene {
                 ambient,
                 state.config.is_volcanic(),
             );
+
+            // 6. Remote multiplayer explorer avatars (human_low.obj) and 3D signal beacons
+            self.net.draw_3d(d3, &self.terrain, &state.config);
         });
     }
 
     fn draw_2d(&mut self, state: &mut AppState, style: &Style) -> SceneAction {
+        // Draw 2D floating nameplates and beacon distance markers in screen space
+        self.net.draw_2d_overlays(&self.camera);
+
         if !self.show_hud {
             return SceneAction::None;
         }
@@ -229,15 +258,20 @@ impl Scene<AppState> for WorldScene {
             "Biome: {} | Sun: {} | Towns: {} | Trees: {}",
             biome.name(),
             self.sky.time_of_day.name(),
-            if state.config.towns_enabled { "ON" } else { "OFF" },
+            if state.config.towns_enabled {
+                "ON"
+            } else {
+                "OFF"
+            },
             if self.props.enabled { "ON" } else { "OFF" }
         );
         TextElement::new(biome_text).place(style, "hud_biome");
 
         let preset_text = format!(
-            "Preset: {} | Seed: #{}",
+            "Preset: {} | Seed: #{} | Net: {}",
             state.config.preset.name(),
-            state.config.seed & 0xFFFFFF
+            state.config.seed & 0xFFFFFF,
+            self.net.status_label()
         );
         TextElement::new(preset_text).place(style, "hud_preset_info");
 
@@ -261,18 +295,28 @@ impl Scene<AppState> for WorldScene {
 
         if btn_arch.clicked() {
             state.config.set_preset(WorldPreset::Archipelago);
+            self.net
+                .notify_world_changed(&state.config, self.sky.time_of_day);
         }
         if btn_alpine.clicked() {
             state.config.set_preset(WorldPreset::AlpineHighlands);
+            self.net
+                .notify_world_changed(&state.config, self.sky.time_of_day);
         }
         if btn_canyon.clicked() {
             state.config.set_preset(WorldPreset::Canyonlands);
+            self.net
+                .notify_world_changed(&state.config, self.sky.time_of_day);
         }
         if btn_alien.clicked() {
             state.config.set_preset(WorldPreset::AlienCrags);
+            self.net
+                .notify_world_changed(&state.config, self.sky.time_of_day);
         }
         if btn_rand.clicked() {
             state.config.randomize_seed();
+            self.net
+                .notify_world_changed(&state.config, self.sky.time_of_day);
         }
         if btn_pause.clicked() {
             return SceneAction::Push("pause".to_string());
@@ -280,7 +324,7 @@ impl Scene<AppState> for WorldScene {
 
         // Bottom Controls Bar
         RectangleElement.place(style, "footer_bar");
-        TextElement::new("WASD: Move | Mouse: Look | Shift: Boost | F: Walk/Fly | R: Seed | 1-4: Presets | V: Towns | T: Trees | O: Waves | L: Sun | H: HUD | P/Esc: Pause").place(style, "footer_text");
+        TextElement::new("WASD: Move | Mouse: Look | Shift: Boost | F: Walk/Fly | E: Beacon | M: Reconnect | R: Seed | 1-4: Presets | V: Towns | T: Trees | L: Sun | P/Esc: Pause").place(style, "footer_text");
 
         SceneAction::None
     }
@@ -337,9 +381,24 @@ impl Scene<AppState> for PauseOverlayScene {
         speed_slider.apply(&mut state.camera_speed);
 
         // Feature toggle checkboxes
-        Checkbox::bind("Vegetation & Rocks", &mut state.props_enabled, style, "chk_props");
-        Checkbox::bind("Animated Ocean Waves", &mut state.water_animated, style, "chk_waves");
-        Checkbox::bind("Fantasy Towns & Roads", &mut state.config.towns_enabled, style, "chk_towns");
+        Checkbox::bind(
+            "Vegetation & Rocks",
+            &mut state.props_enabled,
+            style,
+            "chk_props",
+        );
+        Checkbox::bind(
+            "Animated Ocean Waves",
+            &mut state.water_animated,
+            style,
+            "chk_waves",
+        );
+        Checkbox::bind(
+            "Fantasy Towns & Roads",
+            &mut state.config.towns_enabled,
+            style,
+            "chk_towns",
+        );
 
         // Modal action buttons
         let resume_btn = Button::new("Resume World");
@@ -395,6 +454,8 @@ fn main() {
     .register_action("cycle_time", [KEY_L])
     .register_action("toggle_cam_mode", [KEY_F])
     .register_action("toggle_hud", [KEY_H])
+    .register_action("beacon", [KEY_E])
+    .register_action("reconnect", [KEY_M])
     .register_action("boost", [KEY_LEFT_SHIFT, KEY_RIGHT_SHIFT])
     // Continuous movement axes
     .register_axis("horizontal", KEY_A, KEY_D)

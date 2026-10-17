@@ -2,6 +2,7 @@
 name = "lowpoly-procedural-worlds"
 version = "0.1.0"
 edition = "2024"
+default-run = "lppw"
 
 [dependencies]
 muxapp = { git = "https://github.com/MarcosAndradeV/mux", version = "0.4.0" }
@@ -14,3 +15,11 @@ opt-level = 3
 lto = "thin"
 codegen-units = 1
 panic = "abort"
+
+[[bin]]
+name = "server"
+path = "src/bin/server.rs"
+
+[[bin]]
+name = "lppw"
+path = "src/bin/lppw.rs"

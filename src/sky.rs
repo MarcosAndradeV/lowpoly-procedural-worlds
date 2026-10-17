@@ -31,7 +31,7 @@ impl TimeOfDay {
         match self {
             TimeOfDay::Noon => Vector3::new(0.45, 0.85, 0.3).normalize(),
             TimeOfDay::Sunset => Vector3::new(0.85, 0.25, 0.45).normalize(),
-            TimeOfDay::Night => Vector3::new(0.2, 0.9, 0.35).normalize(), // Moon
+            TimeOfDay::Night => Vector3::new(0.85, 0.2, 0.35).normalize(), // Moon
         }
     }
 
@@ -142,8 +142,12 @@ impl SkyDome {
                 let cx = (snap_x + dx) as f32 * cloud_spacing + self.cloud_offset;
                 let cz = (snap_z + dz) as f32 * cloud_spacing;
 
-                // Deterministic variation
-                let seed = ((snap_x + dx) * 73856093) ^ ((snap_z + dz) * 19349663);
+                let gx = (snap_x + dx) as u32;
+                let gz = (snap_z + dz) as u32;
+                let mut seed = gx.wrapping_mul(73856093) ^ gz.wrapping_mul(19349663);
+                seed ^= seed >> 15;
+                seed = seed.wrapping_mul(0x2c1b3c6d);
+                seed ^= seed >> 12;
                 if (seed & 3) == 0 {
                     let w = 45.0 + ((seed >> 2) & 15) as f32 * 2.0;
                     let l = 35.0 + ((seed >> 6) & 15) as f32 * 2.0;

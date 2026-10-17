@@ -102,7 +102,7 @@ checksum = "e4eba85ea1d0a966a983acd07deee566e67395d2d96b6fb39e62b5a833f1eb0b"
 [[package]]
 name = "gss"
 version = "0.1.0"
-source = "git+https://github.com/MarcosAndradeV/GSS#c5dceb2b11dcdac0fd9e83263b6c7f0e2ab7ab95"
+source = "git+https://github.com/MarcosAndradeV/GSS#47ae71ed9396b14006c18bdebf017b72b960caeb"
 dependencies = [
  "lex-just-parse",
  "lsp-server",
@@ -173,9 +173,9 @@ checksum = "7a0016f1ad3bce2eaa5a1420c6aeff18967cd0859693bdbdb2d443bf986c3644"
 
 [[package]]
 name = "libc"
-version = "0.2.190"
+version = "0.2.191"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce5d3ddc6d3fa000eb1536d85e147bfe31aacaba692ed6a876f95cb7c855be78"
+checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
 
 [[package]]
 name = "libloading"
@@ -240,7 +240,7 @@ dependencies = [
 [[package]]
 name = "muxapp"
 version = "0.4.0"
-source = "git+https://github.com/MarcosAndradeV/mux#1e0712037223283945254b61a0c0720e452f9f7f"
+source = "git+https://github.com/MarcosAndradeV/mux#e48a432b8c6b08a742cb762c87210990f06d6ea0"
 dependencies = [
  "muxui",
  "muxutils",
@@ -250,7 +250,7 @@ dependencies = [
 [[package]]
 name = "muxui"
 version = "0.4.0"
-source = "git+https://github.com/MarcosAndradeV/mux#1e0712037223283945254b61a0c0720e452f9f7f"
+source = "git+https://github.com/MarcosAndradeV/mux#e48a432b8c6b08a742cb762c87210990f06d6ea0"
 dependencies = [
  "muxutils",
 ]
@@ -258,7 +258,7 @@ dependencies = [
 [[package]]
 name = "muxutils"
 version = "0.4.0"
-source = "git+https://github.com/MarcosAndradeV/mux#1e0712037223283945254b61a0c0720e452f9f7f"
+source = "git+https://github.com/MarcosAndradeV/mux#e48a432b8c6b08a742cb762c87210990f06d6ea0"
 dependencies = [
  "gss",
  "raylib",
