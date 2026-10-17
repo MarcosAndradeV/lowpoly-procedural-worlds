@@ -161,9 +161,9 @@ impl Scene<AppState> for WorldScene {
             // 1. Distant horizon dome & clouds
             self.sky.draw(d3, cam_pos.x, cam_pos.z);
 
-            // 2. Low-poly terrain mesh
+            // 2. Chunked low-poly terrain mesh with 3D frustum culling
             self.terrain
-                .draw(d3, &state.config, cam_pos.x, cam_pos.z, sun_dir, ambient);
+                .draw(d3, &state.config, &self.camera, sun_dir, ambient);
 
             // 3. Medieval fantasy towns, cobblestone roads & wooden bridges
             self.towns.draw(
@@ -177,13 +177,12 @@ impl Scene<AppState> for WorldScene {
                 self.sky.time_of_day,
             );
 
-            // 4. Procedural vegetation and rock props
+            // 4. Chunked procedural vegetation and rock props with 3D frustum culling
             self.props.draw(
                 d3,
                 &self.terrain,
                 &state.config,
-                cam_pos.x,
-                cam_pos.z,
+                &self.camera,
                 sun_dir,
                 ambient,
             );
@@ -212,10 +211,13 @@ impl Scene<AppState> for WorldScene {
         let pos = self.camera.position;
         let biome = self.terrain.get_biome_at(&state.config, pos.x, pos.z);
         let fps = get_fps();
+        let (vis_chunks, total_chunks) = self.terrain.chunk_stats();
 
         let stats_text = format!(
-            "FPS: {} | Cam: [{:.1}, {:.1}, {:.1}] | Mode: {}",
+            "FPS: {} | Chunks: {}/{} | Cam: [{:.1}, {:.1}, {:.1}] | Mode: {}",
             fps,
+            vis_chunks,
+            total_chunks,
             pos.x,
             pos.y,
             pos.z,

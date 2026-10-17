@@ -92,9 +92,9 @@ impl SkyDome {
     /// Renders the atmospheric horizon dome.
     pub fn draw(&self, d3: &Render3DContext, center_x: f32, center_z: f32) {
         let segments = 36;
-        let radius = 1550.0;
-        let base_y = -60.0;
-        let height = 650.0;
+        let radius = 2350.0;
+        let base_y = -80.0;
+        let height = 750.0;
 
         let (ground_color, sky_color) = self.time_of_day.sky_colors();
         let mut dome_vertices = self.vertex_buffer.borrow_mut();

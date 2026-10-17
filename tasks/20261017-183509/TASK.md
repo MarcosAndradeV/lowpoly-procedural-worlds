@@ -1,6 +1,6 @@
 # Chunk rendering
 
-- STATUS: OPEN
+- STATUS: CLOSED
 - PRIORITY: 90
 - TAGS: rendering performance terrain
 
