@@ -3,6 +3,6 @@ network = {
     port = "8080"
 }
 
-performace = {
+performance = {
     fps = 60
 }
