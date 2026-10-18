@@ -458,7 +458,7 @@ impl PropGenerator {
 use crate::camera::ExplorerCamera;
 use std::cell::RefCell;
 
-pub const PROP_DENSIT: i32 = 1; // NOTE: 4 is perfect
+pub const PROP_DENSIT: i32 = 4; // NOTE: 4 is perfect
 pub const PROP_CELL_SIZE: f32 = 32.0 / PROP_DENSIT as f32;
 pub const PROP_CHUNK_CELLS: i32 = 8;
 pub const PROP_CHUNK_RADIUS: i32 = 2 * PROP_DENSIT;
