@@ -9,4 +9,4 @@ pub mod terrain;
 pub mod towns;
 pub mod water;
 pub mod world;
-
+pub mod config;

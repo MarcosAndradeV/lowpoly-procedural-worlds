@@ -1,6 +1,6 @@
 use crate::sky::TimeOfDay;
 use crate::terrain::LowPolyTerrain;
-use crate::towns::{hash2d, TOWN_CELL_SIZE};
+use crate::towns::{TOWN_CELL_SIZE, hash2d};
 use crate::world::WorldConfig;
 use muxapp::muxui::{d3::*, *};
 use std::cell::RefCell;
@@ -210,42 +210,6 @@ impl Default for LandmarkManager {
 }
 
 impl LandmarkManager {
-    /// Checks whether the camera is near a landmark and returns its display name and distance in meters.
-    pub fn check_discovery(
-        &self,
-        config: &WorldConfig,
-        camera_pos: Vector3,
-    ) -> Option<(&'static str, f32)> {
-        if !self.enabled {
-            return None;
-        }
-
-        let cam_lx = (camera_pos.x / LANDMARK_CELL_SIZE).floor() as i32;
-        let cam_lz = (camera_pos.z / LANDMARK_CELL_SIZE).floor() as i32;
-
-        let mut closest: Option<(&'static str, f32)> = None;
-        let mut min_dist = 110.0; // Discovery trigger distance
-
-        for dlx in -1..=1 {
-            for dlz in -1..=1 {
-                let lm = config.get_landmark_in_cell(cam_lx + dlx, cam_lz + dlz);
-                if !lm.valid {
-                    continue;
-                }
-                let dist = ((camera_pos.x - lm.x).powi(2)
-                    + (camera_pos.y - lm.y).powi(2)
-                    + (camera_pos.z - lm.z).powi(2))
-                .sqrt();
-                if dist < min_dist {
-                    min_dist = dist;
-                    closest = Some((lm.landmark_type.name(), dist));
-                }
-            }
-        }
-
-        closest
-    }
-
     /// Renders all landmarks visible within the active horizon distance in a single batched GPU draw call.
     #[allow(clippy::too_many_arguments)]
     pub fn draw(
@@ -372,9 +336,24 @@ impl LandmarkManager {
         ambient: f32,
         verts: &mut Vec<Vertex3D>,
     ) {
-        let stone_col = Color { r: 135, g: 132, b: 138, a: 255 }; // Weathered granite
-        let dark_stone = Color { r: 108, g: 104, b: 112, a: 255 };
-        let runic_glow = Color { r: 120, g: 215, b: 245, a: 255 }; // Glowing runic inscription
+        let stone_col = Color {
+            r: 135,
+            g: 132,
+            b: 138,
+            a: 255,
+        }; // Weathered granite
+        let dark_stone = Color {
+            r: 108,
+            g: 104,
+            b: 112,
+            a: 255,
+        };
+        let runic_glow = Color {
+            r: 120,
+            g: 215,
+            b: 245,
+            a: 255,
+        }; // Glowing runic inscription
 
         // 1. Central Altar Stone
         Self::append_box(
@@ -431,15 +410,7 @@ impl LandmarkManager {
                 let lz = center.z + mid_angle.sin() * ring_radius;
                 let lintel_pos = Vector3::new(lx, center.y + col_h - 0.4, lz);
                 Self::append_box(
-                    lintel_pos,
-                    1.6,
-                    1.0,
-                    5.2,
-                    mid_angle,
-                    dark_stone,
-                    sun_dir,
-                    ambient,
-                    verts,
+                    lintel_pos, 1.6, 1.0, 5.2, mid_angle, dark_stone, sun_dir, ambient, verts,
                 );
             }
         }
@@ -476,14 +447,49 @@ impl LandmarkManager {
         time_of_day: TimeOfDay,
         verts: &mut Vec<Vertex3D>,
     ) {
-        let white_stone = Color { r: 236, g: 234, b: 230, a: 255 };
-        let red_band = Color { r: 185, g: 45, b: 38, a: 255 };
-        let granite_base = Color { r: 104, g: 102, b: 108, a: 255 };
-        let roof_copper = Color { r: 42, g: 68, b: 62, a: 255 };
+        let white_stone = Color {
+            r: 236,
+            g: 234,
+            b: 230,
+            a: 255,
+        };
+        let red_band = Color {
+            r: 185,
+            g: 45,
+            b: 38,
+            a: 255,
+        };
+        let granite_base = Color {
+            r: 104,
+            g: 102,
+            b: 108,
+            a: 255,
+        };
+        let roof_copper = Color {
+            r: 42,
+            g: 68,
+            b: 62,
+            a: 255,
+        };
         let lantern_light = match time_of_day {
-            TimeOfDay::Noon => Color { r: 255, g: 240, b: 160, a: 255 },
-            TimeOfDay::Sunset => Color { r: 255, g: 220, b: 90, a: 255 },
-            TimeOfDay::Night => Color { r: 255, g: 245, b: 120, a: 255 },
+            TimeOfDay::Noon => Color {
+                r: 255,
+                g: 240,
+                b: 160,
+                a: 255,
+            },
+            TimeOfDay::Sunset => Color {
+                r: 255,
+                g: 220,
+                b: 90,
+                a: 255,
+            },
+            TimeOfDay::Night => Color {
+                r: 255,
+                g: 245,
+                b: 120,
+                a: 255,
+            },
         };
 
         // 1. Heavy stone foundation plinth
@@ -563,19 +569,16 @@ impl LandmarkManager {
 
         // 6. Coastal wooden dock extending out towards water
         let dock_start = pos + Vector3::new(7.0, -0.4, 0.0);
-        let wood_plank = Color { r: 122, g: 82, b: 50, a: 255 };
+        let wood_plank = Color {
+            r: 122,
+            g: 82,
+            b: 50,
+            a: 255,
+        };
         let dock_len = 16.0;
         let dock_w = 3.2;
         Self::append_box(
-            dock_start,
-            dock_len,
-            0.45,
-            dock_w,
-            0.0,
-            wood_plank,
-            sun_dir,
-            ambient,
-            verts,
+            dock_start, dock_len, 0.45, dock_w, 0.0, wood_plank, sun_dir, ambient, verts,
         );
 
         // Dock pilings
@@ -596,7 +599,12 @@ impl LandmarkManager {
                 h,
                 0.45,
                 0.0,
-                Color { r: 80, g: 52, b: 32, a: 255 },
+                Color {
+                    r: 80,
+                    g: 52,
+                    b: 32,
+                    a: 255,
+                },
                 sun_dir,
                 ambient,
                 verts,
@@ -613,10 +621,30 @@ impl LandmarkManager {
         _time_of_day: TimeOfDay,
         verts: &mut Vec<Vertex3D>,
     ) {
-        let wall_col = Color { r: 115, g: 110, b: 120, a: 255 };
-        let trim_col = Color { r: 85, g: 78, b: 92, a: 255 };
-        let wizard_roof_col = Color { r: 64, g: 46, b: 98, a: 255 }; // Deep indigo / arcane violet
-        let orb_col = Color { r: 120, g: 235, b: 255, a: 255 }; // Arcane cyan crystal glow
+        let wall_col = Color {
+            r: 115,
+            g: 110,
+            b: 120,
+            a: 255,
+        };
+        let trim_col = Color {
+            r: 85,
+            g: 78,
+            b: 92,
+            a: 255,
+        };
+        let wizard_roof_col = Color {
+            r: 64,
+            g: 46,
+            b: 98,
+            a: 255,
+        }; // Deep indigo / arcane violet
+        let orb_col = Color {
+            r: 120,
+            g: 235,
+            b: 255,
+            a: 255,
+        }; // Arcane cyan crystal glow
 
         // 1. Buttressed octagonal base
         Self::append_box(
@@ -690,7 +718,12 @@ impl LandmarkManager {
             1.3,
             1.3,
             0.8,
-            Color { r: 235, g: 250, b: 255, a: 255 },
+            Color {
+                r: 235,
+                g: 250,
+                b: 255,
+                a: 255,
+            },
             sun_dir,
             1.5,
             verts,
@@ -704,7 +737,12 @@ impl LandmarkManager {
             0.35,
             4.0,
             0.0,
-            Color { r: 110, g: 74, b: 46, a: 255 },
+            Color {
+                r: 110,
+                g: 74,
+                b: 46,
+                a: 255,
+            },
             sun_dir,
             ambient,
             verts,
@@ -719,10 +757,30 @@ impl LandmarkManager {
         ambient: f32,
         verts: &mut Vec<Vertex3D>,
     ) {
-        let trunk_col = Color { r: 76, g: 48, b: 30, a: 255 }; // Ancient bark
-        let leaves_main = Color { r: 42, g: 122, b: 54, a: 255 }; // Lush emerald
-        let leaves_high = Color { r: 62, g: 154, b: 72, a: 255 }; // Vibrant golden canopy
-        let leaves_gold = Color { r: 198, g: 165, b: 48, a: 255 }; // Mystical blossom accents
+        let trunk_col = Color {
+            r: 76,
+            g: 48,
+            b: 30,
+            a: 255,
+        }; // Ancient bark
+        let leaves_main = Color {
+            r: 42,
+            g: 122,
+            b: 54,
+            a: 255,
+        }; // Lush emerald
+        let leaves_high = Color {
+            r: 62,
+            g: 154,
+            b: 72,
+            a: 255,
+        }; // Vibrant golden canopy
+        let leaves_gold = Color {
+            r: 198,
+            g: 165,
+            b: 48,
+            a: 255,
+        }; // Mystical blossom accents
 
         // 1. Sprawling buttress roots sinking into ground
         let root_angles: [f32; 6] = [0.0, 1.05, 2.1, PI, 4.2, 5.25];
@@ -787,9 +845,24 @@ impl LandmarkManager {
         ambient: f32,
         verts: &mut Vec<Vertex3D>,
     ) {
-        let sand_stone = Color { r: 196, g: 148, b: 96, a: 255 };
-        let dark_sand = Color { r: 154, g: 108, b: 68, a: 255 };
-        let gold_relic = Color { r: 245, g: 195, b: 50, a: 255 };
+        let sand_stone = Color {
+            r: 196,
+            g: 148,
+            b: 96,
+            a: 255,
+        };
+        let dark_sand = Color {
+            r: 154,
+            g: 108,
+            b: 68,
+            a: 255,
+        };
+        let gold_relic = Color {
+            r: 245,
+            g: 195,
+            b: 50,
+            a: 255,
+        };
 
         // 1. Stepped 3-tier ziggurat platform
         let tiers = [
@@ -914,7 +987,17 @@ impl LandmarkManager {
         // Top face (+u)
         Self::emit_quad(t_fl, t_fr, t_br, t_bl, u, color, sun_dir, ambient, verts);
         // Bottom face (-u) - ensures geometry is solid when viewed from below
-        Self::emit_quad(b_bl, b_br, b_fr, b_fl, -u, color, sun_dir, ambient * 0.85, verts);
+        Self::emit_quad(
+            b_bl,
+            b_br,
+            b_fr,
+            b_fl,
+            -u,
+            color,
+            sun_dir,
+            ambient * 0.85,
+            verts,
+        );
     }
 
     #[inline]
@@ -939,12 +1022,58 @@ impl LandmarkManager {
         let b_br = base_center + hw - hd;
 
         // 4 sloping sides with outward directions ensuring CCW winding
-        Self::emit_tri(b_fl, b_fr, apex, f + u * 0.5, color, sun_dir, ambient, verts);
-        Self::emit_tri(b_fr, b_br, apex, r + u * 0.5, color, sun_dir, ambient, verts);
-        Self::emit_tri(b_br, b_bl, apex, -f + u * 0.5, color, sun_dir, ambient, verts);
-        Self::emit_tri(b_bl, b_fl, apex, -r + u * 0.5, color, sun_dir, ambient, verts);
+        Self::emit_tri(
+            b_fl,
+            b_fr,
+            apex,
+            f + u * 0.5,
+            color,
+            sun_dir,
+            ambient,
+            verts,
+        );
+        Self::emit_tri(
+            b_fr,
+            b_br,
+            apex,
+            r + u * 0.5,
+            color,
+            sun_dir,
+            ambient,
+            verts,
+        );
+        Self::emit_tri(
+            b_br,
+            b_bl,
+            apex,
+            -f + u * 0.5,
+            color,
+            sun_dir,
+            ambient,
+            verts,
+        );
+        Self::emit_tri(
+            b_bl,
+            b_fl,
+            apex,
+            -r + u * 0.5,
+            color,
+            sun_dir,
+            ambient,
+            verts,
+        );
         // Base underside (-u)
-        Self::emit_quad(b_fl, b_bl, b_br, b_fr, -u, color, sun_dir, ambient * 0.85, verts);
+        Self::emit_quad(
+            b_fl,
+            b_bl,
+            b_br,
+            b_fr,
+            -u,
+            color,
+            sun_dir,
+            ambient * 0.85,
+            verts,
+        );
     }
 
     #[inline]
@@ -969,10 +1098,46 @@ impl LandmarkManager {
         let b_br = base_center + hw - hd;
 
         // 4 downward sloping sides with outward-downward directions
-        Self::emit_tri(b_fr, b_fl, apex, f - u * 0.5, color, sun_dir, ambient * 0.85, verts);
-        Self::emit_tri(b_br, b_fr, apex, r - u * 0.5, color, sun_dir, ambient * 0.85, verts);
-        Self::emit_tri(b_bl, b_br, apex, -f - u * 0.5, color, sun_dir, ambient * 0.85, verts);
-        Self::emit_tri(b_fl, b_bl, apex, -r - u * 0.5, color, sun_dir, ambient * 0.85, verts);
+        Self::emit_tri(
+            b_fr,
+            b_fl,
+            apex,
+            f - u * 0.5,
+            color,
+            sun_dir,
+            ambient * 0.85,
+            verts,
+        );
+        Self::emit_tri(
+            b_br,
+            b_fr,
+            apex,
+            r - u * 0.5,
+            color,
+            sun_dir,
+            ambient * 0.85,
+            verts,
+        );
+        Self::emit_tri(
+            b_bl,
+            b_br,
+            apex,
+            -f - u * 0.5,
+            color,
+            sun_dir,
+            ambient * 0.85,
+            verts,
+        );
+        Self::emit_tri(
+            b_fl,
+            b_bl,
+            apex,
+            -r - u * 0.5,
+            color,
+            sun_dir,
+            ambient * 0.85,
+            verts,
+        );
         // Top base (+u)
         Self::emit_quad(b_fl, b_fr, b_br, b_bl, u, color, sun_dir, ambient, verts);
     }
@@ -1077,7 +1242,12 @@ mod tests {
             6.0,
             8.0,
             0.35,
-            Color { r: 255, g: 255, b: 255, a: 255 },
+            Color {
+                r: 255,
+                g: 255,
+                b: 255,
+                a: 255,
+            },
             sun,
             0.5,
             &mut verts,
@@ -1094,7 +1264,10 @@ mod tests {
             let p2 = chunk[2].position;
             let cross = (p1 - p0).cross(p2 - p0);
             let n = chunk[0].normal.unwrap();
-            assert!(n.dot(cross) > 0.0, "Triangle winding was clockwise / back-facing relative to normal!");
+            assert!(
+                n.dot(cross) > 0.0,
+                "Triangle winding was clockwise / back-facing relative to normal!"
+            );
         }
     }
 
@@ -1106,7 +1279,12 @@ mod tests {
             Vector3::new(0.0, 0.0, 0.0),
             12.0,
             8.0,
-            Color { r: 255, g: 255, b: 255, a: 255 },
+            Color {
+                r: 255,
+                g: 255,
+                b: 255,
+                a: 255,
+            },
             sun,
             0.5,
             &mut verts,
@@ -1121,8 +1299,10 @@ mod tests {
             let p2 = chunk[2].position;
             let cross = (p1 - p0).cross(p2 - p0);
             let n = chunk[0].normal.unwrap();
-            assert!(n.dot(cross) > 0.0, "Pyramid triangle winding was clockwise / back-facing!");
+            assert!(
+                n.dot(cross) > 0.0,
+                "Pyramid triangle winding was clockwise / back-facing!"
+            );
         }
     }
 }
-
