@@ -1,6 +1,6 @@
-use crate::biomes::BiomeType;
-use crate::terrain::LowPolyTerrain;
+use crate::terrain::{CHUNK_RADIUS, DEFAULT_CELL_SIZE, LowPolyTerrain};
 use crate::world::WorldConfig;
+use crate::{biomes::BiomeType, terrain::CHUNK_CELLS};
 use muxapp::muxui::{d3::*, *};
 use std::f32::consts::PI;
 
@@ -458,13 +458,50 @@ impl PropGenerator {
 use crate::camera::ExplorerCamera;
 use std::cell::RefCell;
 
-pub const PROP_DENSIT: i32 = 4; // NOTE: 4 is perfect
-pub const PROP_CELL_SIZE: f32 = 32.0 / PROP_DENSIT as f32;
-pub const PROP_CHUNK_CELLS: i32 = 8;
-pub const PROP_CHUNK_RADIUS: i32 = 2 * PROP_DENSIT;
+/// World size of one prop cell. Must divide the terrain chunk span evenly.
+/// Keeping this at 8.0 keeps the exact same tree layout as before (the hash
+/// works on global cell coordinates), only the chunking changes.
+pub const PROP_CELL_SIZE: f32 = 8.0;
+
+/// How many prop chunks fit along one terrain chunk edge.
+///   1 = one prop chunk per terrain chunk (49 slots, fewest draw calls, biggest meshes)
+///   2 = 4 prop chunks per terrain chunk (225 slots, ~4x smaller meshes/rebuilds)
+pub const PROP_CHUNK_SUBDIV: i32 = 1;
+
+/// Cells per prop chunk edge, derived so prop chunks tile the terrain chunks exactly.
+pub const PROP_CHUNK_CELLS: i32 =
+    ((CHUNK_CELLS as f32 * DEFAULT_CELL_SIZE) / (PROP_CELL_SIZE * PROP_CHUNK_SUBDIV as f32)) as i32;
+
+/// Radius in prop chunks. With SUBDIV > 1 one extra ring is added so the props
+/// always cover at least as far as the terrain, whichever half of a terrain
+/// chunk the camera is standing in.
+pub const PROP_CHUNK_RADIUS: i32 = if PROP_CHUNK_SUBDIV == 1 {
+    CHUNK_RADIUS
+} else {
+    CHUNK_RADIUS * PROP_CHUNK_SUBDIV + 1
+};
+
 pub const PROP_CHUNK_DIM: i32 = PROP_CHUNK_RADIUS * 2 + 1;
 pub const TOTAL_PROP_CHUNKS: usize = (PROP_CHUNK_DIM * PROP_CHUNK_DIM) as usize;
-const CHUNK_PROP_GPU_CAPACITY: usize = 9_600;
+
+/// Initial / minimum vertex capacity of a chunk's GPU mesh. A forested 432x432
+/// chunk needs on the order of 100k vertices; slots grow by 1.5x when exceeded,
+/// so this only sets where growth starts. Lower = less VRAM for sparse chunks.
+const CHUNK_PROP_GPU_CAPACITY: usize = 32_000;
+
+/// Max chunk rebuilds per frame. Chunks are big now, so spread the work out.
+const MAX_PROP_REBUILDS_PER_FRAME: usize = 2;
+
+// Compile-time guard: prop chunks must tile terrain chunks exactly.
+const _: () = {
+    let terrain_span = CHUNK_CELLS as f32 * DEFAULT_CELL_SIZE;
+    let prop_span = PROP_CHUNK_CELLS as f32 * PROP_CELL_SIZE * PROP_CHUNK_SUBDIV as f32;
+    let d = prop_span - terrain_span;
+    assert!(
+        d < 0.001 && d > -0.001,
+        "PROP_CELL_SIZE * PROP_CHUNK_SUBDIV must divide the terrain chunk span evenly"
+    );
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct PropChunkKey {
@@ -499,8 +536,9 @@ impl Default for PropChunkSlot {
     }
 }
 
-/// Spatially manages, caches, and batches procedural props across a `5x5` toroidal chunk grid
-/// with per-chunk `GpuMesh` retention and 3D frustum culling.
+/// Spatially manages, caches, and batches procedural props across a toroidal chunk grid
+/// aligned to the terrain chunks, with per-chunk `GpuMesh` retention, a per-frame rebuild
+/// budget, and 3D frustum culling.
 pub struct PropManager {
     pub enabled: bool,
     pub cell_size: f32,
@@ -729,6 +767,12 @@ impl PropManager {
     }
 
     /// Streams, frustum-culls, and renders all procedural prop chunks around `camera`.
+    ///
+    /// Prop chunks tile the terrain chunks exactly and use the same radius, so props
+    /// reach as far as the terrain does. At most `MAX_PROP_REBUILDS_PER_FRAME` chunks
+    /// are rebuilt per frame; a chunk waiting for its turn is skipped if its slot still
+    /// holds a different chunk, or drawn from its stale mesh if it is the same chunk
+    /// with outdated lighting / water settings.
     pub fn draw(
         &self,
         d3: &Render3DContext,
@@ -748,6 +792,7 @@ impl PropManager {
 
         let mut chunks = self.chunks.borrow_mut();
         let mut prop_vertices = self.vertex_buffer.borrow_mut();
+        let mut rebuilt = 0usize;
 
         for dcx in -self.chunk_radius..=self.chunk_radius {
             for dcz in -self.chunk_radius..=self.chunk_radius {
@@ -766,44 +811,55 @@ impl PropManager {
                 };
 
                 if chunks[slot_idx].key != Some(expected_key) {
-                    let (min_bound, max_bound) = self.build_chunk_props(
-                        cx,
-                        cz,
-                        terrain,
-                        config,
-                        sun_dir,
-                        ambient,
-                        &mut prop_vertices,
-                    );
+                    if rebuilt < MAX_PROP_REBUILDS_PER_FRAME {
+                        rebuilt += 1;
 
-                    let active_count = prop_vertices.len();
-                    let slot = &mut chunks[slot_idx];
-                    slot.min_bound = min_bound;
-                    slot.max_bound = max_bound;
-                    slot.active_verts = active_count;
-                    slot.key = Some(expected_key);
-
-                    if active_count > 0 {
-                        if active_count > slot.gpu_capacity {
-                            slot.gpu_capacity = (active_count * 3 / 2).div_ceil(3) * 3;
-                        }
-                        prop_vertices.resize(
-                            slot.gpu_capacity,
-                            Vertex3D::new(
-                                Vector3::zero(),
-                                Color {
-                                    r: 0,
-                                    g: 0,
-                                    b: 0,
-                                    a: 0,
-                                },
-                            ),
+                        let (min_bound, max_bound) = self.build_chunk_props(
+                            cx,
+                            cz,
+                            terrain,
+                            config,
+                            sun_dir,
+                            ambient,
+                            &mut prop_vertices,
                         );
-                        if let Some(ref mut mesh) = slot.gpu_mesh {
-                            mesh.update_vertices(&prop_vertices);
-                        } else {
-                            slot.gpu_mesh = Some(GpuMesh::from_vertices(&prop_vertices));
+
+                        let active_count = prop_vertices.len();
+                        let slot = &mut chunks[slot_idx];
+                        slot.min_bound = min_bound;
+                        slot.max_bound = max_bound;
+                        slot.active_verts = active_count;
+                        slot.key = Some(expected_key);
+
+                        if active_count > 0 {
+                            if active_count > slot.gpu_capacity {
+                                slot.gpu_capacity = (active_count * 3 / 2).div_ceil(3) * 3;
+                                // A GPU buffer can't grow in place: drop it so a new,
+                                // larger mesh is created below.
+                                slot.gpu_mesh = None;
+                            }
+                            prop_vertices.resize(
+                                slot.gpu_capacity,
+                                Vertex3D::new(
+                                    Vector3::zero(),
+                                    Color {
+                                        r: 0,
+                                        g: 0,
+                                        b: 0,
+                                        a: 0,
+                                    },
+                                ),
+                            );
+                            if let Some(ref mut mesh) = slot.gpu_mesh {
+                                mesh.update_vertices(&prop_vertices);
+                            } else {
+                                slot.gpu_mesh = Some(GpuMesh::from_vertices(&prop_vertices));
+                            }
                         }
+                    } else if !matches!(chunks[slot_idx].key, Some(k) if k.cx == cx && k.cz == cz)
+                    {
+                        // Out of rebuild budget and the slot holds some other chunk's mesh.
+                        continue;
                     }
                 }
 
