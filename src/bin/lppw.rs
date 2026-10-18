@@ -1,8 +1,5 @@
-
-use muxapp::muxui::d3::*;
-use muxapp::muxui::*;
-use muxapp::{App, Input, MouseAxis, Scene, SceneAction, SceneLayerMode};
 use lowpoly_procedural_worlds::camera::ExplorerCamera;
+use lowpoly_procedural_worlds::config;
 use lowpoly_procedural_worlds::landmarks::LandmarkManager;
 use lowpoly_procedural_worlds::network::MultiplayerClient;
 use lowpoly_procedural_worlds::props::PropManager;
@@ -11,6 +8,9 @@ use lowpoly_procedural_worlds::terrain::LowPolyTerrain;
 use lowpoly_procedural_worlds::towns::TownManager;
 use lowpoly_procedural_worlds::water::LowPolyWater;
 use lowpoly_procedural_worlds::world::{WorldConfig, WorldPreset};
+use muxapp::muxui::d3::*;
+use muxapp::muxui::*;
+use muxapp::{App, Input, MouseAxis, Scene, SceneAction, SceneLayerMode};
 
 /// Shared state across scenes in the MUX SceneRouter.
 pub struct AppState {
@@ -299,13 +299,6 @@ impl Scene<AppState> for WorldScene {
         );
         TextElement::new(preset_text).place(style, "hud_preset_info");
 
-        // Landmark discovery banner
-        if let Some((name, dist)) = self.landmarks.check_discovery(&state.config, self.camera.position) {
-            RectangleElement.place(style, "landmark_banner_bg");
-            TextElement::new(format!("DISCOVERED: {}", name.to_uppercase())).place(style, "landmark_banner_title");
-            TextElement::new(format!("Distance: {:.0}m", dist)).place(style, "landmark_banner_dist");
-        }
-
         // Top-Right Preset & Pause Buttons
         let btn_arch = Button::new("1: Archipelago");
         let btn_alpine = Button::new("2: Alpine");
@@ -477,7 +470,7 @@ fn main() {
     })
     .set_virtual_resolution(1280, 720)
     .set_style_file("style.gss")
-    .set_fps(60)
+    .set_fps(config::get_fps() as i32)
     // Semantic input actions
     .register_ui_action("pause", [KEY_P, KEY_ESCAPE])
     .register_action("randomize_seed", [KEY_R])

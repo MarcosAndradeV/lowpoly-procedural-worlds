@@ -1,4 +1,5 @@
 use crate::camera::{CameraMode, ExplorerCamera};
+use crate::config;
 use crate::sky::TimeOfDay;
 use crate::terrain::LowPolyTerrain;
 use crate::world::{WorldConfig, WorldPreset};
@@ -199,7 +200,7 @@ pub struct MultiplayerClient {
 impl Default for MultiplayerClient {
     fn default() -> Self {
         let mut client = Self {
-            server_addr: config_get_host_and_port(),
+            server_addr: config::get_host_and_port(),
             stream: None,
             recv_buf: String::with_capacity(4096),
             local_id: 0,
@@ -746,21 +747,6 @@ impl MultiplayerClient {
             0 => TimeOfDay::Noon,
             2 => TimeOfDay::Night,
             _ => TimeOfDay::Sunset,
-        }
-    }
-}
-
-pub fn config_get_host_and_port() -> String {
-    match gss::load_gss_from_file("./config.gss") {
-        Ok(ok) => {
-            let host = ok.get_or(&["network", "host"], "127.0.0.1".to_string());
-            let port = ok.get_or(&["network", "port"], "8080".to_string());
-            format!("{}:{}", host, port)
-        }
-        Err(err) => {
-            log_error!("NET: Cannot load `config.gss` {err}");
-            log_info!("NET: Using default address: `127.0.0.1:8080`");
-            "127.0.0.1:8080".to_string()
         }
     }
 }

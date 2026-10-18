@@ -10,7 +10,7 @@ use std::{
     time::Duration,
 };
 
-use lowpoly_procedural_worlds::network::config_get_host_and_port;
+use lowpoly_procedural_worlds::config;
 use muxapp::muxui::{FromGssValue, Vector3, gss};
 
 struct PlayerSession {
@@ -254,7 +254,7 @@ fn handle_connection(mut stream: TcpStream) {
 }
 
 fn main() -> std::io::Result<()> {
-    let bind_addr = config_get_host_and_port();
+    let bind_addr = config::get_host_and_port();
     let listener = TcpListener::bind(&bind_addr)?;
     println!("======================================================");
     println!(" Low-Poly Procedural Worlds - Multiplayer GSS Server");
