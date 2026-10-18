@@ -14,6 +14,7 @@ use muxapp::{App, Input, MouseAxis, Scene, SceneAction, SceneLayerMode};
 
 /// Shared state across scenes in the MUX SceneRouter.
 pub struct AppState {
+    pub net: MultiplayerClient,
     pub config: WorldConfig,
     pub preset_request: Option<WorldPreset>,
     pub camera_speed: f32,
@@ -29,6 +30,7 @@ impl Default for AppState {
             camera_speed: 40.0,
             props_enabled: true,
             water_animated: true,
+            net: MultiplayerClient::default()
         }
     }
 }
@@ -43,7 +45,6 @@ pub struct WorldScene {
     pub sky: SkyDome,
     pub camera: ExplorerCamera,
     pub show_hud: bool,
-    pub net: MultiplayerClient,
 }
 
 impl Default for WorldScene {
@@ -70,7 +71,6 @@ impl Default for WorldScene {
             sky: SkyDome::default(),
             camera,
             show_hud: true,
-            net: MultiplayerClient::default(),
         }
     }
 }
@@ -99,34 +99,34 @@ impl Scene<AppState> for WorldScene {
         // Handle external preset requests from UI or pause menu
         if let Some(preset) = state.preset_request.take() {
             state.config.set_preset(preset);
-            self.net
+            state.net
                 .notify_world_changed(&state.config, self.sky.time_of_day);
         }
 
         // Semantic action hotkeys
         if input.is_action_pressed("randomize_seed") {
             state.config.randomize_seed();
-            self.net
+            state.net
                 .notify_world_changed(&state.config, self.sky.time_of_day);
         }
         if input.is_action_pressed("preset_1") {
             state.config.set_preset(WorldPreset::Archipelago);
-            self.net
+            state.net
                 .notify_world_changed(&state.config, self.sky.time_of_day);
         }
         if input.is_action_pressed("preset_2") {
             state.config.set_preset(WorldPreset::AlpineHighlands);
-            self.net
+            state.net
                 .notify_world_changed(&state.config, self.sky.time_of_day);
         }
         if input.is_action_pressed("preset_3") {
             state.config.set_preset(WorldPreset::Canyonlands);
-            self.net
+            state.net
                 .notify_world_changed(&state.config, self.sky.time_of_day);
         }
         if input.is_action_pressed("preset_4") {
             state.config.set_preset(WorldPreset::AlienCrags);
-            self.net
+            state.net
                 .notify_world_changed(&state.config, self.sky.time_of_day);
         }
         if input.is_action_pressed("toggle_props") {
@@ -143,7 +143,7 @@ impl Scene<AppState> for WorldScene {
         }
         if input.is_action_pressed("cycle_time") {
             self.sky.cycle_time();
-            self.net
+            state.net
                 .notify_world_changed(&state.config, self.sky.time_of_day);
         }
         if input.is_action_pressed("toggle_cam_mode") {
@@ -153,11 +153,11 @@ impl Scene<AppState> for WorldScene {
             self.show_hud = !self.show_hud;
         }
         if input.is_action_pressed("beacon") {
-            self.net
+            state.net
                 .place_beacon(&self.camera, &self.terrain, &state.config);
         }
         if input.is_action_pressed("reconnect") {
-            self.net.try_connect();
+            state.net.try_connect();
         }
 
         // Synchronize state
@@ -169,7 +169,7 @@ impl Scene<AppState> for WorldScene {
 
         // Update systems
         self.camera.update(input, &self.terrain, &state.config, dt);
-        self.net.update(
+        state.net.update(
             &mut self.camera,
             &mut state.config,
             &mut self.sky.time_of_day,
@@ -181,7 +181,7 @@ impl Scene<AppState> for WorldScene {
         SceneAction::None
     }
 
-    fn draw_3d(&mut self, state: &AppState) {
+    fn draw_3d(&mut self, state: &mut AppState) {
         let cam = self.camera.to_camera_3d();
         let sun_dir = self.sky.time_of_day.sun_dir();
         let ambient = self.sky.time_of_day.ambient_light();
@@ -241,13 +241,13 @@ impl Scene<AppState> for WorldScene {
             );
 
             // 6. Remote multiplayer explorer avatars (human_low.obj) and 3D signal beacons
-            self.net.draw_3d(d3, &self.terrain, &state.config);
+            state.net.draw_3d(d3, &self.terrain, &state.config);
         });
     }
 
     fn draw_2d(&mut self, state: &mut AppState, style: &Style) -> SceneAction {
         // Draw 2D floating nameplates and beacon distance markers in screen space
-        self.net.draw_2d_overlays(&self.camera);
+        state.net.draw_2d_overlays(&self.camera);
 
         if !self.show_hud {
             return SceneAction::None;
@@ -295,7 +295,7 @@ impl Scene<AppState> for WorldScene {
             "Preset: {} | Seed: #{} | Net: {}",
             state.config.preset.name(),
             state.config.seed & 0xFFFFFF,
-            self.net.status_label()
+            state.net.status_label()
         );
         TextElement::new(preset_text).place(style, "hud_preset_info");
 
@@ -319,27 +319,27 @@ impl Scene<AppState> for WorldScene {
 
         if btn_arch.clicked() {
             state.config.set_preset(WorldPreset::Archipelago);
-            self.net
+            state.net
                 .notify_world_changed(&state.config, self.sky.time_of_day);
         }
         if btn_alpine.clicked() {
             state.config.set_preset(WorldPreset::AlpineHighlands);
-            self.net
+            state.net
                 .notify_world_changed(&state.config, self.sky.time_of_day);
         }
         if btn_canyon.clicked() {
             state.config.set_preset(WorldPreset::Canyonlands);
-            self.net
+            state.net
                 .notify_world_changed(&state.config, self.sky.time_of_day);
         }
         if btn_alien.clicked() {
             state.config.set_preset(WorldPreset::AlienCrags);
-            self.net
+            state.net
                 .notify_world_changed(&state.config, self.sky.time_of_day);
         }
         if btn_rand.clicked() {
             state.config.randomize_seed();
-            self.net
+            state.net
                 .notify_world_changed(&state.config, self.sky.time_of_day);
         }
         if btn_pause.clicked() {
