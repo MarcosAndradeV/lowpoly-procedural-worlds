@@ -193,13 +193,15 @@ impl WorldConfig {
         }
     }
 
-    /// Evaluates terrain elevation at coordinates `(x, z)` including O(1) single-cell town plateau flattening.
+    /// Evaluates terrain elevation at coordinates `(x, z)` including town plateau flattening.
     pub fn get_height(&self, x: f32, z: f32) -> f32 {
         let h = self.get_raw_height(x, z);
+
         if !self.towns_enabled {
             return h;
         }
 
+        // 2. Town plateau flattening
         let mx = (x / TOWN_CELL_SIZE).floor() as i32;
         let mz = (z / TOWN_CELL_SIZE).floor() as i32;
         let town = self.get_town_in_cell(mx, mz);
