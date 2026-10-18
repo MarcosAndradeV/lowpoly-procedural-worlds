@@ -582,6 +582,9 @@ impl PropManager {
                 if config.get_settlement_surface(wx, wz) != crate::towns::SettlementSurface::None {
                     continue;
                 }
+                if config.is_near_landmark(wx, wz) {
+                    continue;
+                }
 
                 let moisture = config.get_moisture(wx, wz);
                 let biome = crate::biomes::classify_biome(

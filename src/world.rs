@@ -1,3 +1,6 @@
+use crate::landmarks::{
+    compute_landmark_for_cell, LandmarkSite, LANDMARK_CELL_SIZE,
+};
 use crate::noise::NoiseGenerator;
 use crate::towns::{
     can_connect_towns, compute_town_for_cell, evaluate_road_segment, SettlementSurface, TownSite,
@@ -7,6 +10,10 @@ use std::cell::Cell;
 
 const TOWN_CACHE_DIM: i32 = 16;
 const TOWN_CACHE_SIZE: usize = (TOWN_CACHE_DIM * TOWN_CACHE_DIM) as usize;
+
+const LANDMARK_CACHE_DIM: i32 = 16;
+const LANDMARK_CACHE_SIZE: usize = (LANDMARK_CACHE_DIM * LANDMARK_CACHE_DIM) as usize;
+
 
 /// Preset configurations that define the generation character of the world.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,10 +54,12 @@ pub struct WorldConfig {
     pub base_freq: f32,
     pub octaves: usize,
     pub towns_enabled: bool,
+    pub landmarks_enabled: bool,
     pub terrain_noise: NoiseGenerator,
     pub moisture_noise: NoiseGenerator,
     pub detail_noise: NoiseGenerator,
     town_cache: Vec<Cell<TownSite>>,
+    landmark_cache: Vec<Cell<LandmarkSite>>,
 }
 
 impl Default for WorldConfig {
@@ -73,10 +82,12 @@ impl WorldConfig {
             base_freq: 0.0018,
             octaves: 6,
             towns_enabled: true,
+            landmarks_enabled: true,
             terrain_noise,
             moisture_noise,
             detail_noise,
             town_cache: vec![Cell::new(TownSite::default()); TOWN_CACHE_SIZE],
+            landmark_cache: vec![Cell::new(LandmarkSite::default()); LANDMARK_CACHE_SIZE],
         };
         config.apply_preset_parameters();
         config
@@ -154,6 +165,53 @@ impl WorldConfig {
         computed
     }
 
+    /// Collision-free O(1) 2D toroidal cache lookup for the landmark inside cell `(lx, lz)`.
+    #[inline]
+    pub fn get_landmark_in_cell(&self, lx: i32, lz: i32) -> LandmarkSite {
+        if !self.landmarks_enabled {
+            return LandmarkSite::default();
+        }
+        let idx = ((lx.rem_euclid(LANDMARK_CACHE_DIM) as usize) << 4)
+            | (lz.rem_euclid(LANDMARK_CACHE_DIM) as usize);
+
+        let cached = self.landmark_cache[idx].get();
+        let water_bits = self.water_level.to_bits();
+        let preset_id = self.preset as u8;
+
+        if cached.lx == lx
+            && cached.lz == lz
+            && cached.seed == self.seed
+            && cached.preset_id == preset_id
+            && cached.water_bits == water_bits
+        {
+            return cached;
+        }
+
+        let computed = compute_landmark_for_cell(self, lx, lz);
+        self.landmark_cache[idx].set(computed);
+        computed
+    }
+
+    /// Evaluates whether coordinates `(x, z)` are within the immediate footprint of a landmark.
+    #[inline]
+    pub fn is_near_landmark(&self, x: f32, z: f32) -> bool {
+        if !self.landmarks_enabled {
+            return false;
+        }
+        let lx = (x / LANDMARK_CELL_SIZE).floor() as i32;
+        let lz = (z / LANDMARK_CELL_SIZE).floor() as i32;
+        let lm = self.get_landmark_in_cell(lx, lz);
+        if !lm.valid {
+            return false;
+        }
+        let dx = x - lm.x;
+        let dz = z - lm.z;
+        if dx.abs() >= lm.blend_radius || dz.abs() >= lm.blend_radius {
+            return false;
+        }
+        (dx * dx + dz * dz) < (lm.blend_radius * 0.95).powi(2)
+    }
+
     /// Evaluates unflattened raw procedural terrain elevation at coordinates `(x, z)`.
     pub fn get_raw_height(&self, x: f32, z: f32) -> f32 {
         match self.preset {
@@ -193,9 +251,34 @@ impl WorldConfig {
         }
     }
 
-    /// Evaluates terrain elevation at coordinates `(x, z)` including town plateau flattening.
+    /// Evaluates terrain elevation at coordinates `(x, z)` including town and landmark plateau flattening.
     pub fn get_height(&self, x: f32, z: f32) -> f32 {
-        let h = self.get_raw_height(x, z);
+        let mut h = self.get_raw_height(x, z);
+
+        // 1. Landmark plateau flattening
+        if self.landmarks_enabled {
+            let lx = (x / LANDMARK_CELL_SIZE).floor() as i32;
+            let lz = (z / LANDMARK_CELL_SIZE).floor() as i32;
+            let lm = self.get_landmark_in_cell(lx, lz);
+            if lm.valid {
+                let dx = x - lm.x;
+                let dz = z - lm.z;
+                if dx.abs() < lm.blend_radius && dz.abs() < lm.blend_radius {
+                    let dist_sq = dx * dx + dz * dz;
+                    if dist_sq < lm.blend_radius * lm.blend_radius {
+                        let dist = dist_sq.sqrt();
+                        let target_flat = lm.y;
+                        if dist <= lm.radius {
+                            h = target_flat;
+                        } else {
+                            let t = (dist - lm.radius) / (lm.blend_radius - lm.radius);
+                            let s = t * t * (3.0 - 2.0 * t);
+                            h = target_flat + (h - target_flat) * s;
+                        }
+                    }
+                }
+            }
+        }
 
         if !self.towns_enabled {
             return h;
@@ -345,4 +428,36 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_landmark_plateau_flattening_and_proximity() {
+        let config = WorldConfig::new(9999, WorldPreset::AlpineHighlands);
+        // Find a valid landmark across nearby cells
+        let mut found_lm: Option<crate::landmarks::LandmarkSite> = None;
+        for lx in -3..=3 {
+            for lz in -3..=3 {
+                let lm = config.get_landmark_in_cell(lx, lz);
+                if lm.valid {
+                    found_lm = Some(lm);
+                    break;
+                }
+            }
+            if found_lm.is_some() {
+                break;
+            }
+        }
+
+        let lm = found_lm.expect("Expected at least one valid landmark in 7x7 cell neighborhood");
+        assert!(config.is_near_landmark(lm.x, lm.z));
+
+        // Center should be flattened exactly to lm.y
+        let h_center = config.get_height(lm.x, lm.z);
+        assert!((h_center - lm.y).abs() < 1e-3);
+
+        // Outside blend radius should not be considered near landmark
+        let far_x = lm.x + lm.blend_radius * 2.5;
+        let far_z = lm.z + lm.blend_radius * 2.5;
+        assert!(!config.is_near_landmark(far_x, far_z));
+    }
 }
+

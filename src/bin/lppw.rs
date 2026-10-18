@@ -3,6 +3,7 @@ use muxapp::muxui::d3::*;
 use muxapp::muxui::*;
 use muxapp::{App, Input, MouseAxis, Scene, SceneAction, SceneLayerMode};
 use lowpoly_procedural_worlds::camera::ExplorerCamera;
+use lowpoly_procedural_worlds::landmarks::LandmarkManager;
 use lowpoly_procedural_worlds::network::MultiplayerClient;
 use lowpoly_procedural_worlds::props::PropManager;
 use lowpoly_procedural_worlds::sky::SkyDome;
@@ -38,6 +39,7 @@ pub struct WorldScene {
     pub water: LowPolyWater,
     pub props: PropManager,
     pub towns: TownManager,
+    pub landmarks: LandmarkManager,
     pub sky: SkyDome,
     pub camera: ExplorerCamera,
     pub show_hud: bool,
@@ -64,6 +66,7 @@ impl Default for WorldScene {
             water: LowPolyWater::default(),
             props: PropManager::default(),
             towns: TownManager::default(),
+            landmarks: LandmarkManager::default(),
             sky: SkyDome::default(),
             camera,
             show_hud: true,
@@ -132,6 +135,9 @@ impl Scene<AppState> for WorldScene {
         if input.is_action_pressed("toggle_towns") {
             state.config.towns_enabled = !state.config.towns_enabled;
         }
+        if input.is_action_pressed("toggle_landmarks") {
+            state.config.landmarks_enabled = !state.config.landmarks_enabled;
+        }
         if input.is_action_pressed("toggle_water") {
             state.water_animated = !state.water_animated;
         }
@@ -157,6 +163,7 @@ impl Scene<AppState> for WorldScene {
         // Synchronize state
         self.props.enabled = state.props_enabled;
         self.towns.enabled = state.config.towns_enabled;
+        self.landmarks.enabled = state.config.landmarks_enabled;
         self.water.animated = state.water_animated;
         self.camera.speed = state.camera_speed;
 
@@ -190,6 +197,18 @@ impl Scene<AppState> for WorldScene {
 
             // 3. Medieval fantasy towns, cobblestone roads & wooden bridges
             self.towns.draw(
+                d3,
+                &self.terrain,
+                &state.config,
+                cam_pos.x,
+                cam_pos.z,
+                sun_dir,
+                ambient,
+                self.sky.time_of_day,
+            );
+
+            // 3b. Rare procedural landmarks & horizon anchors
+            self.landmarks.draw(
                 d3,
                 &self.terrain,
                 &state.config,
@@ -255,10 +274,15 @@ impl Scene<AppState> for WorldScene {
         TextElement::new(stats_text).place(style, "hud_stats");
 
         let biome_text = format!(
-            "Biome: {} | Sun: {} | Towns: {} | Trees: {}",
+            "Biome: {} | Sun: {} | Towns: {} | Landmarks: {} | Trees: {}",
             biome.name(),
             self.sky.time_of_day.name(),
             if state.config.towns_enabled {
+                "ON"
+            } else {
+                "OFF"
+            },
+            if state.config.landmarks_enabled {
                 "ON"
             } else {
                 "OFF"
@@ -274,6 +298,13 @@ impl Scene<AppState> for WorldScene {
             self.net.status_label()
         );
         TextElement::new(preset_text).place(style, "hud_preset_info");
+
+        // Landmark discovery banner
+        if let Some((name, dist)) = self.landmarks.check_discovery(&state.config, self.camera.position) {
+            RectangleElement.place(style, "landmark_banner_bg");
+            TextElement::new(format!("DISCOVERED: {}", name.to_uppercase())).place(style, "landmark_banner_title");
+            TextElement::new(format!("Distance: {:.0}m", dist)).place(style, "landmark_banner_dist");
+        }
 
         // Top-Right Preset & Pause Buttons
         let btn_arch = Button::new("1: Archipelago");
@@ -324,7 +355,7 @@ impl Scene<AppState> for WorldScene {
 
         // Bottom Controls Bar
         RectangleElement.place(style, "footer_bar");
-        TextElement::new("WASD: Move | Mouse: Look | Shift: Boost | F: Walk/Fly | E: Beacon | M: Reconnect | R: Seed | 1-4: Presets | V: Towns | T: Trees | L: Sun | P/Esc: Pause").place(style, "footer_text");
+        TextElement::new("WASD: Move | Mouse: Look | Shift: Boost | F: Walk/Fly | E: Beacon | M: Reconnect | R: Seed | 1-4: Presets | V: Towns | K: Landmarks | T: Trees | L: Sun | P/Esc: Pause").place(style, "footer_text");
 
         SceneAction::None
     }
@@ -399,6 +430,12 @@ impl Scene<AppState> for PauseOverlayScene {
             style,
             "chk_towns",
         );
+        Checkbox::bind(
+            "World Landmarks",
+            &mut state.config.landmarks_enabled,
+            style,
+            "chk_landmarks",
+        );
 
         // Modal action buttons
         let resume_btn = Button::new("Resume World");
@@ -450,6 +487,7 @@ fn main() {
     .register_action("preset_4", [KEY_FOUR])
     .register_action("toggle_props", [KEY_T])
     .register_action("toggle_towns", [KEY_V])
+    .register_action("toggle_landmarks", [KEY_K])
     .register_action("toggle_water", [KEY_O])
     .register_action("cycle_time", [KEY_L])
     .register_action("toggle_cam_mode", [KEY_F])
