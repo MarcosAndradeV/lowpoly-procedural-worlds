@@ -1,8 +1,25 @@
+//! # LPPW Noise
+//!
+//! Pure Rust deterministic procedural noise algorithms with zero external dependencies.
+//! Provides 2D Perlin gradient noise, Fractal Brownian Motion (fBm),
+//! ridged multifractals, domain warping, cellular (Worley) distance noise,
+//! and fast 2D spatial coordinate hashing.
+
+/// Fast 2D integer spatial hash function used for deterministic procedural generation.
+#[inline]
+pub fn hash2d(x: i32, z: i32, seed: u64) -> u32 {
+    let mut h = seed
+        ^ ((x as u64).wrapping_mul(0x517cc1b727220a95))
+        ^ ((z as u64).wrapping_mul(0x9e3779b97f4a7c15));
+    h = (h ^ (h >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
+    h = (h ^ (h >> 27)).wrapping_mul(0x94d049bb133111eb);
+    ((h ^ (h >> 31)) & 0xFFFFFFFF) as u32
+}
+
 /// Pure Rust deterministic procedural noise generator.
 ///
 /// Implements 2D Perlin gradient noise, Fractal Brownian Motion (fBm),
 /// ridged multifractals, domain warping, and cellular (Worley) noise.
-
 #[derive(Debug, Clone)]
 pub struct NoiseGenerator {
     perm: [u8; 512],
@@ -236,5 +253,14 @@ mod tests {
                 assert!(d >= 0.0);
             }
         }
+    }
+
+    #[test]
+    fn test_hash2d_is_deterministic() {
+        let h1 = hash2d(12, 34, 42);
+        let h2 = hash2d(12, 34, 42);
+        let h3 = hash2d(12, 35, 42);
+        assert_eq!(h1, h2);
+        assert_ne!(h1, h3);
     }
 }

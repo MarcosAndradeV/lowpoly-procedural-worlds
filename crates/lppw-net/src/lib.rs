@@ -1,8 +1,12 @@
-use crate::camera::{CameraMode, ExplorerCamera};
-use crate::config;
-use crate::sky::TimeOfDay;
-use crate::terrain::LowPolyTerrain;
-use crate::world::{WorldConfig, WorldPreset};
+//! # lppw-net
+//!
+//! Multiplayer networking protocol, GSS state synchronization, beacon tracking,
+//! and 3D humanoid avatar mesh parsing/rendering.
+
+use lppw_render::camera::{CameraMode, ExplorerCamera};
+use lppw_render::sky::TimeOfDay;
+use lppw_render::terrain::LowPolyTerrain;
+use lppw_world::world::{WorldConfig, WorldPreset};
 use muxapp::muxui::d3::*;
 use muxapp::muxui::*;
 use std::collections::HashMap;
@@ -199,8 +203,14 @@ pub struct MultiplayerClient {
 
 impl Default for MultiplayerClient {
     fn default() -> Self {
+        Self::new("127.0.0.1:8080")
+    }
+}
+
+impl MultiplayerClient {
+    pub fn new(server_addr: impl Into<String>) -> Self {
         let mut client = Self {
-            server_addr: config::get_host_and_port(),
+            server_addr: server_addr.into(),
             stream: None,
             recv_buf: String::with_capacity(4096),
             local_id: 0,
@@ -217,9 +227,6 @@ impl Default for MultiplayerClient {
         client.try_connect();
         client
     }
-}
-
-impl MultiplayerClient {
     pub fn is_connected(&self) -> bool {
         self.stream.is_some()
     }

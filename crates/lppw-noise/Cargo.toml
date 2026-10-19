@@ -1,0 +1,7 @@
+[package]
+name = "lppw-noise"
+version = "0.1.0"
+edition = "2024"
+description = "Fast, deterministic, pure-Rust procedural noise algorithms (fBm, ridged, cellular, domain warp, simplex)"
+
+[dependencies]

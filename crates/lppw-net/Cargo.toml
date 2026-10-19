@@ -1,0 +1,11 @@
+[package]
+name = "lppw-net"
+version = "0.1.0"
+edition = "2024"
+description = "Multiplayer networking protocol, GSS state synchronization, and avatar rendering"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+lppw-world = { path = "../lppw-world" }
+lppw-render = { path = "../lppw-render" }
+muxapp = { workspace = true }

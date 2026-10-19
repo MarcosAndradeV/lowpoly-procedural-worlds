@@ -1,7 +1,7 @@
-use crate::biomes::{calculate_facet_color, classify_biome, BiomeType};
 use crate::camera::ExplorerCamera;
-use crate::towns::SettlementSurface;
-use crate::world::WorldConfig;
+use lppw_world::biomes::{calculate_facet_color, classify_biome, BiomeType};
+use lppw_world::towns::SettlementSurface;
+use lppw_world::world::WorldConfig;
 use muxapp::muxui::{d3::*, *};
 use std::cell::{Cell, RefCell};
 
@@ -469,7 +469,7 @@ impl LowPolyTerrain {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::world::WorldPreset;
+    use lppw_world::world::WorldPreset;
 
     #[test]
     fn test_terrain_elevation_matches_config() {

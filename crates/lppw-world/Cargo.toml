@@ -1,0 +1,10 @@
+[package]
+name = "lppw-world"
+version = "0.1.0"
+edition = "2024"
+description = "Headless procedural world generation and spatial simulation model"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+lppw-noise = { workspace = true }
+muxapp = { workspace = true }

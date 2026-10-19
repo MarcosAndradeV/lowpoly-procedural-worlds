@@ -1,5 +1,5 @@
 use crate::terrain::LowPolyTerrain;
-use crate::world::WorldConfig;
+use lppw_world::WorldConfig;
 use muxapp::muxui::d3::*;
 use muxapp::muxui::*;
 use muxapp::Input;

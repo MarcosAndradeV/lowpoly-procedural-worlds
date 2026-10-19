@@ -1,6 +1,7 @@
-use crate::terrain::{CHUNK_RADIUS, DEFAULT_CELL_SIZE, LowPolyTerrain};
-use crate::world::WorldConfig;
-use crate::{biomes::BiomeType, terrain::CHUNK_CELLS};
+use crate::terrain::{CHUNK_CELLS, CHUNK_RADIUS, DEFAULT_CELL_SIZE, LowPolyTerrain};
+use lppw_world::biomes::{classify_biome, BiomeType};
+use lppw_world::towns::SettlementSurface;
+use lppw_world::world::WorldConfig;
 use muxapp::muxui::{d3::*, *};
 use std::f32::consts::PI;
 
@@ -617,7 +618,7 @@ impl PropManager {
                 if normal.y < 0.74 {
                     continue;
                 }
-                if config.get_settlement_surface(wx, wz) != crate::towns::SettlementSurface::None {
+                if config.get_settlement_surface(wx, wz) != SettlementSurface::None {
                     continue;
                 }
                 if config.is_near_landmark(wx, wz) {
@@ -625,7 +626,7 @@ impl PropManager {
                 }
 
                 let moisture = config.get_moisture(wx, wz);
-                let biome = crate::biomes::classify_biome(
+                let biome = classify_biome(
                     wy,
                     config.water_level,
                     moisture,

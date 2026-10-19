@@ -30,7 +30,7 @@ impl Default for AppState {
             camera_speed: 40.0,
             props_enabled: true,
             water_animated: true,
-            net: MultiplayerClient::default()
+            net: MultiplayerClient::new(config::get_host_and_port()),
         }
     }
 }

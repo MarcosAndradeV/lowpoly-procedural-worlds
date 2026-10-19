@@ -1,0 +1,11 @@
+[package]
+name = "lppw-render"
+version = "0.1.0"
+edition = "2024"
+description = "Low-poly 3D graphics presentation engine for procedural worlds"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+lppw-noise = { path = "../lppw-noise" }
+lppw-world = { path = "../lppw-world" }
+muxapp = { workspace = true }

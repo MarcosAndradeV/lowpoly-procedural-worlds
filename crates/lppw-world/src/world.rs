@@ -1,11 +1,11 @@
 use crate::landmarks::{
     compute_landmark_for_cell, LandmarkSite, LANDMARK_CELL_SIZE,
 };
-use crate::noise::NoiseGenerator;
 use crate::towns::{
     can_connect_towns, compute_town_for_cell, evaluate_road_segment, SettlementSurface, TownSite,
     TOWN_CELL_SIZE,
 };
+use lppw_noise::NoiseGenerator;
 use std::cell::Cell;
 
 const TOWN_CACHE_DIM: i32 = 16;
@@ -13,7 +13,6 @@ const TOWN_CACHE_SIZE: usize = (TOWN_CACHE_DIM * TOWN_CACHE_DIM) as usize;
 
 const LANDMARK_CACHE_DIM: i32 = 16;
 const LANDMARK_CACHE_SIZE: usize = (LANDMARK_CACHE_DIM * LANDMARK_CACHE_DIM) as usize;
-
 
 /// Preset configurations that define the generation character of the world.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -460,4 +459,3 @@ mod tests {
         assert!(!config.is_near_landmark(far_x, far_z));
     }
 }
-

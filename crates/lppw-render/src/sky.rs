@@ -1,4 +1,5 @@
 use muxapp::muxui::{d3::*, *};
+use std::cell::RefCell;
 use std::f32::consts::PI;
 
 /// Time of day lighting preset.
@@ -60,8 +61,6 @@ impl TimeOfDay {
         }
     }
 }
-
-use std::cell::RefCell;
 
 /// Atmospheric haze dome and stylized floating low-poly clouds.
 pub struct SkyDome {
